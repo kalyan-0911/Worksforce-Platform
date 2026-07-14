@@ -361,6 +361,41 @@ def manage_projects(current_user):
     finally:
         conn.close()
 
+@app.route('/api/projects/recommend-squad', methods=['POST'])
+@token_required
+@role_required('Employer')
+def recommend_squad(current_user):
+    data = request.json or {}
+    required_roles = data.get('roles', [])
+
+    if not required_roles or not isinstance(required_roles, list):
+        return jsonify({'error': 'Roles array is required.'}), 400
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("SELECT * FROM professionals WHERE status = 'Bench';")
+        bench_rows = cursor.fetchall()
+        bench_candidates = []
+
+        for r in bench_rows:
+            p = dict(r)
+            cursor.execute(
+                """SELECT s.name FROM skills s
+                   JOIN professional_skills ps ON s.id = ps.skill_id
+                   WHERE ps.professional_id = ?;""",
+                (p['id'],)
+            )
+            p['skills'] = [sr['name'] for sr in cursor.fetchall()]
+            bench_candidates.append(p)
+
+        recommendations = ai_engine_instance.optimize_team_squad(required_roles, bench_candidates)
+        return jsonify(recommendations)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        conn.close()
+
 
 # --- ASSESSMENTS ROUTES ---
 

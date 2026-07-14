@@ -61,6 +61,10 @@ export const api = {
     method: 'POST',
     body: JSON.stringify(teamData)
   }),
+  recommendSquad: (rolesData) => fetchApi('/projects/recommend-squad', {
+    method: 'POST',
+    body: JSON.stringify(rolesData)
+  }),
 
   // Analytics
   getAnalytics: () => fetchApi('/analytics'),

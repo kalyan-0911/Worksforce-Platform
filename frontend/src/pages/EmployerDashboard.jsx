@@ -11,18 +11,21 @@ export default function EmployerDashboard() {
   const [selectedReq, setSelectedReq] = useState(null);
   const [matches, setMatches] = useState([]);
   const [requiredSkills, setRequiredSkills] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadingMatches, setLoadingMatches] = useState(false);
 
   useEffect(() => {
     const loadInitialData = async () => {
       try {
-        const [stats, reqs] = await Promise.all([
+        const [stats, reqs, projs] = await Promise.all([
           api.getAnalytics(),
-          api.getRequisitions()
+          api.getRequisitions(),
+          api.getProjects()
         ]);
         setAnalytics(stats);
         setRequisitions(reqs);
+        setProjects(projs);
         
         if (reqs.length > 0) {
           handleSelectRequisition(reqs[0].id);
@@ -204,6 +207,46 @@ export default function EmployerDashboard() {
               </div>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Deployed Projects & Squad Member lists */}
+      <div style={{ marginTop: '2rem' }}>
+        <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--accent-indigo)' }}>Active Deployed Project Squads</h2>
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Review the allocations, sizes, and specific members for all currently active client projects.</p>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.25rem', marginTop: '0.5rem' }}>
+            {projects.length === 0 ? (
+              <div style={{ gridColumn: '1 / -1', padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', border: '1px dashed var(--border-color)', borderRadius: 'var(--radius-sm)' }}>
+                No active projects deployed. Run the AI Team Assembler to deploy a team squad.
+              </div>
+            ) : (
+              projects.map((proj) => (
+                <div key={proj.id} style={{ padding: '1.25rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontWeight: 700, color: '#fff' }}>{proj.name}</div>
+                    <span style={{ fontSize: '0.7rem', padding: '0.2rem 0.5rem', background: 'rgba(99, 102, 241, 0.15)', color: 'var(--accent-indigo)', borderRadius: '4px', border: '1px solid var(--accent-indigo)', fontWeight: 600 }}>
+                      {proj.size} Members
+                    </span>
+                  </div>
+                  
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginTop: '0.25rem' }}>
+                    Squad Allocations:
+                  </div>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    {proj.members.map((member) => (
+                      <div key={member.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0.5rem 0.75rem', background: 'var(--bg-secondary)', borderRadius: '4px', border: '1px solid rgba(255,255,255,0.02)' }}>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 600 }}>{member.name}</span>
+                        <span style={{ fontSize: '0.7rem', color: 'var(--text-secondary)' }}>{member.role}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </div>
     </div>
