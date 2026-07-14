@@ -1,5 +1,5 @@
-import os
 from app.repositories import CandidateRepository, RequisitionRepository
+from app.services import groq_service
 
 class AIService:
     @staticmethod
@@ -19,13 +19,25 @@ class AIService:
                 c.get('readiness_score', 80),
                 required_skills
             )
+            
+            # Form a mock job object for the explanation
+            job_mock = {
+                'title': req.get('role', 'Role'),
+                'company': 'your project',
+                'location': 'Remote',
+                'skills': required_skills
+            }
+            
+            explanation = groq_service.explain_match(c, job_mock, match_res['score'])
+
             matches.append({
                 'id': c['id'],
                 'name': c['name'],
                 'role': c['target_role'],
                 'matchScore': match_res['score'],
                 'overlappingSkills': match_res['overlappingSkills'],
-                'missingSkills': match_res['missingSkills']
+                'missingSkills': match_res['missingSkills'],
+                'explanation': explanation
             })
 
         # Sort descending by compatibility score

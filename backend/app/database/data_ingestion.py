@@ -32,11 +32,8 @@ def get_db():
     client = MongoClient(uri, server_api=ServerApi("1"), serverSelectionTimeoutMS=15000)
     return client[db_name]
 
+from app.database.mongodb import hash_password
 
-def hash_password(password: str) -> str:
-    salt = b"workforcex_salt_v1"
-    dk = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, 100000)
-    return binascii.hexlify(dk).decode()
 
 
 # ─────────────────────────────────────────────
@@ -543,26 +540,57 @@ def seed_assessments(db):
 # Ingestion: Default Employer Account
 # ─────────────────────────────────────────────
 
-def seed_employer_account(db):
-    existing = db.users.find_one({"email": "employer@workforcex.com"})
-    if existing:
-        print(f"  [SKIP] Default employer account already exists.")
-        return
-
-    db.users.insert_one({
-        "email":           "employer@workforcex.com",
-        "password_hash":   hash_password("workforce123"),
-        "role":            "Employer",
-        "professional_id": None,
-    })
-    db.employers.insert_one({
-        "email":        "employer@workforcex.com",
-        "company_name": "WorkForceX Corp",
-        "industry":     "Technology",
-        "location":     "Bangalore",
-        "company_size": "201-500",
-    })
-    print(f"  [OK]   Default employer account created (employer@workforcex.com / workforce123).")
+def seed_demo_accounts(db):
+    # Admin
+    if not db.users.find_one({"email": "admin@workforcex.com"}):
+        db.users.insert_one({
+            "email": "admin@workforcex.com",
+            "password_hash": hash_password("workforce123"),
+            "role": "Admin",
+            "professional_id": None
+        })
+    # Employer
+    if not db.users.find_one({"email": "employer@workforcex.com"}):
+        db.users.insert_one({
+            "email": "employer@workforcex.com",
+            "password_hash": hash_password("workforce123"),
+            "role": "Employer",
+            "professional_id": None
+        })
+        db.organizations.insert_one({
+            "email": "employer@workforcex.com",
+            "company_name": "WorkForceX Corp",
+            "industry": "Technology",
+            "location": "Bangalore",
+            "company_size": "201-500",
+        })
+    # Professional
+    if not db.users.find_one({"email": "professional@workforcex.com"}):
+        db.users.insert_one({
+            "email": "professional@workforcex.com",
+            "password_hash": hash_password("workforce123"),
+            "role": "Professional",
+            "professional_id": "PROF-DEMO"
+        })
+        if not db.candidates.find_one({"id": "PROF-DEMO"}):
+            db.candidates.insert_one({
+                "id": "PROF-DEMO",
+                "name": "Demo Professional",
+                "target_role": "Software Engineer",
+                "status": "Bench",
+                "readiness_score": 85,
+                "skills": [{"name": "React", "verified": True}],
+                "training": {
+                    "cohort_code": "COHORT-2026-REACT",
+                    "track": "React Full-Stack",
+                    "trainer": "Marcus Aurelius",
+                    "progress_percentage": 50,
+                    "mock_project_score": 0
+                },
+                "assessments": [],
+                "onboarded": True
+            })
+    print("  [OK]   Demo accounts verified (admin, employer, professional).")
 
 
 # ─────────────────────────────────────────────
@@ -637,8 +665,8 @@ def run_ingestion():
     print("\n[3/4] Seeding Assessments...")
     seed_assessments(db)
 
-    print("\n[4/4] Seeding Default Accounts...")
-    seed_employer_account(db)
+    print("\n[4/4] Seeding Demo Accounts...")
+    seed_demo_accounts(db)
 
     print("\n══════════════════════════════════════════════")
     print("   Ingestion Complete!")

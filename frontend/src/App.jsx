@@ -7,6 +7,7 @@ import WorkforceInventory from './pages/WorkforceInventory';
 import TeamBuilder from './pages/TeamBuilder';
 import WorkforceAnalytics from './pages/WorkforceAnalytics';
 import LoginGateway from './pages/LoginGateway';
+import AdminDashboard from './pages/AdminDashboard';
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('workforcex_token'));
@@ -16,7 +17,9 @@ function App() {
 
   useEffect(() => {
     if (user) {
-      setActiveTab(user.role === 'Employer' ? 'employer' : 'professional');
+      if (user.role === 'Admin') setActiveTab('admin');
+      else if (user.role === 'Employer') setActiveTab('employer');
+      else setActiveTab('professional');
     }
   }, [user]);
 
@@ -36,6 +39,8 @@ function App() {
 
   const renderContent = () => {
     switch (activeTab) {
+      case 'admin':
+        return <AdminDashboard />;
       case 'employer':
         return <EmployerDashboard />;
       case 'professional':
@@ -47,6 +52,7 @@ function App() {
       case 'analytics':
         return <WorkforceAnalytics />;
       default:
+        if (user?.role === 'Admin') return <AdminDashboard />;
         return user?.role === 'Employer' ? <EmployerDashboard /> : <ProfessionalDashboard />;
     }
   };

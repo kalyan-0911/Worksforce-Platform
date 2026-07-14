@@ -24,12 +24,16 @@ def token_required(f):
         return f(current_user, *args, **kwargs)
     return decorated
 
-def role_required(required_role):
+def role_required(required_roles):
     def decorator(f):
         @wraps(f)
         def decorated(current_user, *args, **kwargs):
-            if current_user.get('role') != required_role:
-                return jsonify({'error': f'Access forbidden: requires {required_role} role.'}), 403
+            if isinstance(required_roles, list):
+                if current_user.get('role') not in required_roles:
+                    return jsonify({'error': f'Access forbidden.'}), 403
+            else:
+                if current_user.get('role') != required_roles:
+                    return jsonify({'error': f'Access forbidden.'}), 403
             return f(current_user, *args, **kwargs)
         return decorated
     return decorator

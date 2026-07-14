@@ -373,7 +373,7 @@ SKILLS: React, JavaScript, HTML, CSS, Docker, Python, Git...`}
       <div style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h1 style={{ fontSize: '2rem', fontWeight: 700, background: 'var(--gradient-primary)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', display: 'inline-block' }}>
-            Associate Portal
+            Professional Dashboard
           </h1>
           <p style={{ color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
             Welcome back, {profile.name}. {isTraining ? "Track your cohort batch curriculum milestones." : "Manage your project readiness and bench availability."}
@@ -420,7 +420,21 @@ SKILLS: React, JavaScript, HTML, CSS, Docker, Python, Git...`}
         )}
       </div>
 
+      {/* Marketplace Jobs */}
+      <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+        Marketplace Jobs
+      </h2>
+      <div className="glass-card" style={{ marginBottom: '2rem', padding: '2rem', textAlign: 'center', border: '1px dashed var(--border-color)' }}>
+        <h3 style={{ color: 'var(--text-secondary)' }}>Explore Public Jobs</h3>
+        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.5rem' }}>
+          Browse and apply for opportunities available in the WorkForceX marketplace.
+        </p>
+      </div>
+
       {/* Metrics */}
+      <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--accent-indigo)', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+        My Career (Private)
+      </h2>
       <div className="dashboard-grid">
         <div className="glass-card">
           <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontWeight: 500 }}>Readiness Score</div>
@@ -449,6 +463,9 @@ SKILLS: React, JavaScript, HTML, CSS, Docker, Python, Git...`}
         </div>
       </div>
 
+      <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--accent-cyan)', marginBottom: '1rem', marginTop: '2rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+        AI Recommendations
+      </h2>
       {/* Three Sections Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '1.5rem', marginBottom: '2rem' }}>
         

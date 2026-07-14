@@ -2,7 +2,7 @@ from app.repositories import ProjectRepository, CandidateRepository
 
 class ProjectService:
     @staticmethod
-    def deploy_squad(name, member_ids):
+    def deploy_squad(name, member_ids, employer_id):
         if not name or not member_ids:
             raise ValueError("Project name and memberIds are required.")
 
@@ -25,6 +25,7 @@ class ProjectService:
             "name": name,
             "size": len(member_ids),
             "status": "Active",
+            "employer_id": employer_id,
             "members": member_profiles
         }
         ProjectRepository.create(new_project)

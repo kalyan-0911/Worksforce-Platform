@@ -8,6 +8,15 @@ export default function LoginGateway({ onLoginSuccess }) {
   const [name, setName] = useState('');
   const [role, setRole] = useState('Employer');
   const [jobRole, setJobRole] = useState('');
+  
+  // Employer Extra Fields
+  const [companyName, setCompanyName] = useState('');
+  const [industry, setIndustry] = useState('');
+  const [companySize, setCompanySize] = useState('');
+  const [location, setLocation] = useState('');
+  
+  // Professional Extra Fields
+  const [careerPath, setCareerPath] = useState('');
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -26,7 +35,12 @@ export default function LoginGateway({ onLoginSuccess }) {
           password,
           role,
           name: role === 'Professional' ? name : 'Employer Admin',
-          job_role: role === 'Professional' ? jobRole : 'Employer'
+          job_role: role === 'Professional' ? jobRole : 'Employer',
+          company_name: companyName,
+          industry: industry,
+          company_size: companySize,
+          location: location,
+          career_path: careerPath
         });
         const loginData = await api.login({ email, password });
         onLoginSuccess(loginData.token, loginData.user);
@@ -222,6 +236,107 @@ export default function LoginGateway({ onLoginSuccess }) {
                         fontFamily: 'var(--font-family)'
                       }}
                     />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Career Path</label>
+                    <input 
+                      type="text" 
+                      required 
+                      value={careerPath} 
+                      onChange={(e) => setCareerPath(e.target.value)}
+                      placeholder="e.g. Full Stack Developer"
+                      style={{
+                        padding: '0.75rem',
+                        borderRadius: 'var(--radius-sm)',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                        background: 'var(--bg-tertiary)',
+                        color: '#fff',
+                        fontSize: '0.85rem',
+                        fontFamily: 'var(--font-family)'
+                      }}
+                    />
+                  </div>
+                </>
+              )}
+              {role === 'Employer' && (
+                <>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Company Name</label>
+                    <input 
+                      type="text" 
+                      required 
+                      value={companyName} 
+                      onChange={(e) => setCompanyName(e.target.value)}
+                      placeholder="e.g. Acme Corp"
+                      style={{
+                        padding: '0.75rem',
+                        borderRadius: 'var(--radius-sm)',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                        background: 'var(--bg-tertiary)',
+                        color: '#fff',
+                        fontSize: '0.85rem',
+                        fontFamily: 'var(--font-family)'
+                      }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                    <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Industry</label>
+                    <input 
+                      type="text" 
+                      required 
+                      value={industry} 
+                      onChange={(e) => setIndustry(e.target.value)}
+                      placeholder="e.g. FinTech"
+                      style={{
+                        padding: '0.75rem',
+                        borderRadius: 'var(--radius-sm)',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                        background: 'var(--bg-tertiary)',
+                        color: '#fff',
+                        fontSize: '0.85rem',
+                        fontFamily: 'var(--font-family)'
+                      }}
+                    />
+                  </div>
+                  <div style={{ display: 'flex', gap: '0.75rem' }}>
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Size</label>
+                      <input 
+                        type="text" 
+                        required 
+                        value={companySize} 
+                        onChange={(e) => setCompanySize(e.target.value)}
+                        placeholder="e.g. 100-500"
+                        style={{
+                          padding: '0.75rem',
+                          borderRadius: 'var(--radius-sm)',
+                          border: '1px solid rgba(255,255,255,0.08)',
+                          background: 'var(--bg-tertiary)',
+                          color: '#fff',
+                          fontSize: '0.85rem',
+                          fontFamily: 'var(--font-family)'
+                        }}
+                      />
+                    </div>
+                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                      <label style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600 }}>Location</label>
+                      <input 
+                        type="text" 
+                        required 
+                        value={location} 
+                        onChange={(e) => setLocation(e.target.value)}
+                        placeholder="e.g. Remote"
+                        style={{
+                          padding: '0.75rem',
+                          borderRadius: 'var(--radius-sm)',
+                          border: '1px solid rgba(255,255,255,0.08)',
+                          background: 'var(--bg-tertiary)',
+                          color: '#fff',
+                          fontSize: '0.85rem',
+                          fontFamily: 'var(--font-family)'
+                        }}
+                      />
+                    </div>
                   </div>
                 </>
               )}

@@ -11,8 +11,6 @@ def register():
     email = data.get('email')
     password = data.get('password')
     role = data.get('role')
-    name = data.get('name', 'Anonymous')
-    job_role = data.get('job_role', 'Engineer')
 
     if not email or not password or not role:
         return jsonify({'error': 'Email, password, and role are required.'}), 400
@@ -21,7 +19,7 @@ def register():
         return jsonify({'error': 'Invalid role.'}), 400
 
     try:
-        res = AuthService.register_user(email, password, role, name, job_role)
+        res = AuthService.register_user(email, password, role, extra_data=data)
         return jsonify({'message': 'Registration successful.', 'role': res['role'], 'professionalId': res['professionalId']}), 201
     except ValueError as e:
         return jsonify({'error': str(e)}), 409
@@ -55,6 +53,7 @@ def get_current_user(current_user):
             candidate = CandidateRepository.get_by_id(prof_id)
 
         return jsonify({
+            'id': current_user.get('id'),
             'email': current_user.get('email'),
             'role': current_user.get('role'),
             'professionalId': prof_id,

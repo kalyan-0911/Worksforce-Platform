@@ -17,10 +17,11 @@ def manage_projects(current_user):
             name = data.get('name')
             member_ids = data.get('memberIds', [])
             
-            res = ProjectService.deploy_squad(name, member_ids)
+            res = ProjectService.deploy_squad(name, member_ids, current_user['id'])
             return jsonify({'message': 'Team successfully deployed.', 'projectId': res['id']}), 201
         else: # GET
-            projects = ProjectRepository.get_all()
+            projects = list(get_db().projects.find({'employer_id': current_user['id']}, {'_id': 0}))
+            from app.database import get_db
             return jsonify(projects)
     except ValueError as e:
         return jsonify({'error': str(e)}), 400

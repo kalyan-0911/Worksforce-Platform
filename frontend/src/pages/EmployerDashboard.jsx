@@ -2,18 +2,19 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../services/api';
 
 export default function EmployerDashboard() {
-  const [analytics, setAnalytics] = useState({
-    activeProjects: 0,
-    openRequisitions: 0,
-    utilizationRate: '0.0%'
-  });
+  const [analytics, setAnalytics] = useState(null);
   const [requisitions, setRequisitions] = useState([]);
   const [selectedReq, setSelectedReq] = useState(null);
   const [matches, setMatches] = useState([]);
   const [requiredSkills, setRequiredSkills] = useState([]);
   const [projects, setProjects] = useState([]);
+  
+  // Organization Details
+  const [orgData, setOrgData] = useState(null);
+  
   const [loading, setLoading] = useState(true);
   const [loadingMatches, setLoadingMatches] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     const loadInitialData = async () => {
@@ -53,7 +54,38 @@ export default function EmployerDashboard() {
     }
   };
 
-  if (loading) {
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    
+    setUploading(true);
+    const formData = new FormData();
+    formData.append('file', file);
+    
+    try {
+      const token = localStorage.getItem('workforcex_token');
+      const res = await fetch('http://localhost:5000/api/organizations/upload', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        },
+        body: formData
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setOrgData(data.summary);
+        alert('Organization Dataset uploaded and parsed successfully!');
+      } else {
+        alert('Upload failed: ' + data.error);
+      }
+    } catch (err) {
+      alert('Error uploading file: ' + err.message);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  if (loading || !analytics) {
     return (
       <div className="page-container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
         <div style={{ width: '40px', height: '40px', border: '3px solid rgba(255,255,255,0.05)', borderTopColor: 'var(--accent-cyan)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
@@ -72,36 +104,103 @@ export default function EmployerDashboard() {
         </p>
       </div>
 
-      {/* Metrics Row */}
+      {/* 1. Marketplace Intelligence */}
+      <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+        Marketplace Intelligence (Public)
+      </h2>
       <div className="dashboard-grid">
         <div className="glass-card">
-          <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontWeight: 500 }}>Active Projects</div>
-          <div style={{ fontSize: '2rem', fontWeight: 700, margin: '0.5rem 0', color: 'var(--accent-indigo)' }}>{analytics.activeProjects}</div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)' }}>Live in workspace</div>
+          <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontWeight: 500 }}>Active Organizations</div>
+          <div style={{ fontSize: '2rem', fontWeight: 700, margin: '0.5rem 0', color: 'var(--text-primary)' }}>{analytics.marketplace.totalOrganizations}</div>
         </div>
         <div className="glass-card">
-          <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontWeight: 500 }}>Talent Liquidity Index</div>
-          <div style={{ fontSize: '2rem', fontWeight: 700, margin: '0.5rem 0', color: 'var(--accent-cyan)' }}>
-            {parseFloat(analytics.utilizationRate) > 0 ? (100 - parseFloat(analytics.utilizationRate)).toFixed(1) : '100'}%
-          </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Bench capacity index</div>
+          <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontWeight: 500 }}>Available Professionals</div>
+          <div style={{ fontSize: '2rem', fontWeight: 700, margin: '0.5rem 0', color: 'var(--text-primary)' }}>{analytics.marketplace.totalTalent}</div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)' }}>Talent Availability Index: {analytics.marketplace.utilizationRate} utilized</div>
         </div>
         <div className="glass-card">
-          <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontWeight: 500 }}>Open Requisitions</div>
-          <div style={{ fontSize: '2rem', fontWeight: 700, margin: '0.5rem 0', color: 'var(--accent-purple)' }}>{analytics.openRequisitions}</div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Avg. match time: 4.8 hrs</div>
+          <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontWeight: 500 }}>Open Job Opportunities</div>
+          <div style={{ fontSize: '2rem', fontWeight: 700, margin: '0.5rem 0', color: 'var(--text-primary)' }}>{analytics.marketplace.totalJobs}</div>
+        </div>
+      </div>
+      
+      <div className="dashboard-grid" style={{ gridTemplateColumns: '1fr 1fr', marginTop: '1.5rem', marginBottom: '2rem' }}>
+        <div className="glass-card">
+           <h3 style={{ fontSize: '1rem', color: 'var(--accent-cyan)' }}>Trending Skills (Market)</h3>
+           <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
+             React, Python, Machine Learning, Cloud Architecture, Data Engineering
+           </p>
+        </div>
+        <div className="glass-card">
+           <h3 style={{ fontSize: '1rem', color: 'var(--accent-purple)' }}>AI Market Insights</h3>
+           <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '0.5rem' }}>
+             High demand observed for Machine Learning Engineers. Talent pool liquidity is stable.
+           </p>
         </div>
       </div>
 
-      {/* Two Columns Section */}
+      {/* 2. Organization Data Import */}
+      <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+        Organization Data Import
+      </h2>
+      <div className="glass-card" style={{ marginBottom: '3rem', border: '1px dashed var(--accent-indigo)' }}>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginBottom: '1rem' }}>
+          Upload your company's internal dataset (CSV/XLSX) to generate your private AI Organization Profile.
+        </p>
+        <input 
+          type="file" 
+          accept=".csv,.xlsx" 
+          onChange={handleFileUpload} 
+          disabled={uploading}
+          style={{ padding: '0.5rem', background: 'rgba(255,255,255,0.05)', borderRadius: '4px', border: '1px solid var(--border-color)', color: '#fff' }}
+        />
+        {uploading && <span style={{ marginLeft: '1rem', color: 'var(--accent-cyan)', fontSize: '0.9rem' }}>Uploading and Parsing...</span>}
+      </div>
+
+      {/* 3. My Workspace */}
+      <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--accent-indigo)', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+        My Workspace (Private)
+      </h2>
+      
+      {orgData && (
+        <div className="dashboard-grid" style={{ marginBottom: '1.5rem', gridTemplateColumns: 'repeat(4, 1fr)' }}>
+           <div className="glass-card" style={{ background: 'rgba(99, 102, 241, 0.05)' }}>
+             <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Parsed Employees</div>
+             <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#fff' }}>{orgData.employee_count}</div>
+           </div>
+           <div className="glass-card" style={{ background: 'rgba(99, 102, 241, 0.05)' }}>
+             <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Departments Found</div>
+             <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#fff' }}>{orgData.departments?.length || 0}</div>
+           </div>
+           <div className="glass-card" style={{ background: 'rgba(99, 102, 241, 0.05)', gridColumn: 'span 2' }}>
+             <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Internal Skills Detected</div>
+             <div style={{ fontSize: '0.85rem', color: 'var(--accent-cyan)', marginTop: '0.5rem', display: 'flex', flexWrap: 'wrap', gap: '0.25rem' }}>
+               {orgData.internal_skills?.slice(0, 8).map(s => <span key={s} style={{ background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px' }}>{s}</span>)}
+               {orgData.internal_skills?.length > 8 && <span>+{orgData.internal_skills.length - 8} more</span>}
+             </div>
+           </div>
+        </div>
+      )}
+      
+      <div className="dashboard-grid" style={{ marginBottom: '2rem' }}>
+        <div className="glass-card">
+          <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontWeight: 500 }}>My Active Projects</div>
+          <div style={{ fontSize: '2rem', fontWeight: 700, margin: '0.5rem 0', color: 'var(--accent-indigo)' }}>{analytics.workspace.activeProjects}</div>
+        </div>
+        <div className="glass-card">
+          <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontWeight: 500 }}>My Open Requisitions</div>
+          <div style={{ fontSize: '2rem', fontWeight: 700, margin: '0.5rem 0', color: 'var(--accent-purple)' }}>{analytics.workspace.openRequisitions}</div>
+        </div>
+      </div>
+
       <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '1.5rem' }}>
         {/* Requisitions Column */}
         <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Active Talent Requisitions</h2>
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Select a requisition to run AI semantic matching recommendations.</p>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 600 }}>My Talent Requisitions</h2>
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Select a requisition to view matches.</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
             {requisitions.length === 0 ? (
-              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>No open requisitions.</div>
+              <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-muted)' }}>No open requisitions in your workspace.</div>
             ) : (
               requisitions.map((req) => {
                 const isSelected = selectedReq && selectedReq.id === req.id;
@@ -140,10 +239,10 @@ export default function EmployerDashboard() {
         {/* AI Recommendations */}
         <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <div style={{ borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem' }}>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--accent-cyan)' }}>AI Match Insights</h2>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--accent-cyan)' }}>Top Recommended Professionals</h2>
             {selectedReq && (
               <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
-                Requirements for <strong>{selectedReq.role}</strong> ({selectedReq.id})
+                Matches from the Marketplace for <strong>{selectedReq.role}</strong>
               </div>
             )}
           </div>
@@ -156,7 +255,6 @@ export default function EmployerDashboard() {
 
           {!loadingMatches && selectedReq && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              {/* Skill Requirements list */}
               <div>
                 <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.5rem', fontWeight: 600 }}>Required Skills Matrix:</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
@@ -168,7 +266,6 @@ export default function EmployerDashboard() {
                 </div>
               </div>
 
-              {/* Match list */}
               <div>
                 <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.75rem', fontWeight: 600 }}>Candidate Compatibility Ranks:</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -187,7 +284,6 @@ export default function EmployerDashboard() {
                           <div style={{ fontWeight: 700, color: 'var(--accent-cyan)', fontSize: '1.05rem' }}>{candidate.matchScore}% Match</div>
                         </div>
 
-                        {/* Overlapping/Missing skills display */}
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.3rem', marginTop: '0.5rem' }}>
                           {candidate.overlappingSkills.map((skill, idx) => (
                             <span key={idx} style={{ fontSize: '0.65rem', padding: '0.15rem 0.4rem', borderRadius: '3px', background: 'rgba(6, 182, 212, 0.08)', color: 'var(--accent-cyan)', border: '1px solid rgba(6, 182, 212, 0.2)' }}>
@@ -210,16 +306,14 @@ export default function EmployerDashboard() {
         </div>
       </div>
 
-      {/* Deployed Projects & Squad Member lists */}
       <div style={{ marginTop: '2rem' }}>
         <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--accent-indigo)' }}>Active Deployed Project Squads</h2>
-          <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>Review the allocations, sizes, and specific members for all currently active client projects.</p>
+          <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--accent-indigo)' }}>My Active Deployed Project Squads</h2>
           
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1.25rem', marginTop: '0.5rem' }}>
             {projects.length === 0 ? (
               <div style={{ gridColumn: '1 / -1', padding: '2rem', textAlign: 'center', color: 'var(--text-muted)', border: '1px dashed var(--border-color)', borderRadius: 'var(--radius-sm)' }}>
-                No active projects deployed. Run the AI Team Assembler to deploy a team squad.
+                No active projects deployed in your workspace.
               </div>
             ) : (
               projects.map((proj) => (
