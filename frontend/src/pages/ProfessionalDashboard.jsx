@@ -15,25 +15,27 @@ export default function ProfessionalDashboard() {
   const [testResult, setTestResult] = useState(null);
   const [submittingTest, setSubmittingTest] = useState(false);
 
+  // Resume Onboarding Wizard states
+  const [resumeText, setResumeText] = useState('');
+  const [parsing, setParsing] = useState(false);
+  const [wizardResult, setWizardResult] = useState(null);
+
   const loadProfileData = async () => {
     try {
       setError(null);
-      const [talent, projects, tests] = await Promise.all([
-        api.getProfessionals(),
+      const [meData, projects, tests] = await Promise.all([
+        api.getMe(),
         api.getProjects(),
         api.getAssessments()
       ]);
       
-      const myProfile = talent.find(t => t.id === 'PROF-001') || talent[0];
-      if (!myProfile) {
-        throw new Error("No talent profiles found. Make sure the backend server loaded seeds successfully.");
-      }
+      const myProfile = meData.candidate;
       setProfile(myProfile);
 
       if (myProfile) {
         const myProject = projects.find(proj => 
           proj.status === 'Active' && 
-          proj.members.some(m => m.id === myProfile.id)
+          proj.members && proj.members.some(m => m.id === myProfile.id)
         );
         if (myProject) {
           setActiveProjectName(myProject.name);
@@ -65,6 +67,31 @@ export default function ProfessionalDashboard() {
     } catch (err) {
       alert(`Failed to update availability: ${err.message}`);
     }
+  };
+
+  const handleParseResume = async (e) => {
+    e.preventDefault();
+    if (!resumeText.trim()) {
+      alert('Please paste your resume details.');
+      return;
+    }
+
+    setParsing(true);
+    setWizardResult(null);
+    try {
+      const data = await api.parseResume({ resume_text: resumeText });
+      setWizardResult(data.recommendations);
+    } catch (err) {
+      alert(`Failed to parse resume: ${err.message}`);
+    } finally {
+      setParsing(false);
+    }
+  };
+
+  const handleCompleteOnboarding = () => {
+    setResumeText('');
+    setWizardResult(null);
+    loadProfileData();
   };
 
   const startTest = async (testId) => {
@@ -169,57 +196,228 @@ export default function ProfessionalDashboard() {
       <div className="page-container">
         <div className="glass-card" style={{ padding: '2rem', textAlign: 'center' }}>
           <h3 style={{ color: 'var(--accent-cyan)', marginBottom: '1rem' }}>No Profile Found</h3>
-          <p style={{ color: 'var(--text-secondary)' }}>The database is connected but no user profiles could be loaded.</p>
+          <p style={{ color: 'var(--text-secondary)' }}>The database is connected but no candidate profiles could be loaded for this account.</p>
         </div>
       </div>
     );
   }
 
+  // Detect un-onboarded new user
+  const needsOnboarding = !profile.training || !profile.training.cohort_code;
+
+  if (needsOnboarding) {
+    return (
+      <div className="page-container" style={{ maxWidth: '800px', margin: '0 auto' }}>
+        <div style={{ marginBottom: '2rem' }}>
+          <h1 style={{ fontSize: '2rem', fontWeight: 700, background: 'var(--gradient-primary)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', display: 'inline-block' }}>
+            Associate Onboarding Wizard
+          </h1>
+          <p style={{ color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
+            Configure your target technology track and synchronize your skills using our resume analysis engine.
+          </p>
+        </div>
+
+        {!wizardResult ? (
+          <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div>
+              <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '0.5rem' }}>Analyze Profile Resume</h2>
+              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                Paste your resume text below (experience, skill sets, certifications). Our engine will parse your skills and recommend the best Revature-style training cohort track.
+              </p>
+            </div>
+
+            <form onSubmit={handleParseResume} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+              <textarea
+                value={resumeText}
+                onChange={(e) => setResumeText(e.target.value)}
+                placeholder={`e.g.
+JOHN SMITH
+Email: john@gmail.com
+SUMMARY: Software developer with 2 years of experience.
+SKILLS: React, JavaScript, HTML, CSS, Docker, Python, Git...`}
+                rows="10"
+                style={{
+                  background: 'var(--bg-primary)',
+                  border: '1px solid var(--glass-border)',
+                  color: '#fff',
+                  padding: '1rem',
+                  borderRadius: 'var(--radius-sm)',
+                  outline: 'none',
+                  fontSize: '0.9rem',
+                  fontFamily: 'var(--font-family)',
+                  resize: 'vertical',
+                  lineHeight: 1.5
+                }}
+              />
+
+              <button
+                type="submit"
+                disabled={parsing}
+                style={{
+                  background: parsing ? 'var(--bg-tertiary)' : 'var(--gradient-primary)',
+                  border: 'none',
+                  color: '#fff',
+                  padding: '0.9rem',
+                  borderRadius: 'var(--radius-sm)',
+                  fontWeight: 600,
+                  fontSize: '0.95rem',
+                  cursor: parsing ? 'not-allowed' : 'pointer',
+                  textAlign: 'center',
+                  boxShadow: 'var(--shadow-sm)'
+                }}
+              >
+                {parsing ? 'Analyzing Skills & Tracks...' : 'Analyze Resume'}
+              </button>
+            </form>
+          </div>
+        ) : (
+          <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem' }}>
+              <div>
+                <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--accent-cyan)' }}>Cohort Alignment Recommendation</h2>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Analysis based on parsed resume keywords</span>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div style={{ padding: '1rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>RECOMMENDED TRAINING TRACK</div>
+                  <div style={{ fontWeight: 700, fontSize: '1.15rem', color: '#fff', marginTop: '0.2rem' }}>{wizardResult.track}</div>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>COHORT BATCH CODE</div>
+                  <div style={{ fontWeight: 700, fontSize: '1.15rem', color: 'var(--accent-indigo)', marginTop: '0.2rem' }}>{wizardResult.cohort_code}</div>
+                </div>
+              </div>
+
+              <div>
+                <h4 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--accent-cyan)' }}>Verified Skills Matched:</h4>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                  {profile.skills && profile.skills.length > 0 ? (
+                    profile.skills.map((s, idx) => (
+                      <span key={idx} style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem', background: 'rgba(6, 182, 212, 0.08)', color: 'var(--accent-cyan)', border: '1px solid rgba(6, 182, 212, 0.2)', borderRadius: '4px' }}>
+                        {s.name}
+                      </span>
+                    ))
+                  ) : (
+                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>No default skills matched. You will build them during training!</span>
+                  )}
+                </div>
+              </div>
+
+              {wizardResult.missing_skills && wizardResult.missing_skills.length > 0 && (
+                <div>
+                  <h4 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Target Skills to Acquire during Cohort:</h4>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    {wizardResult.missing_skills.map((s, idx) => (
+                      <span key={idx} style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem', background: 'rgba(255, 255, 255, 0.02)', color: 'var(--text-secondary)', border: '1px solid var(--border-color)', borderRadius: '4px' }}>
+                        {s}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div style={{ padding: '0.75rem 1rem', background: 'rgba(6, 182, 212, 0.04)', border: '1px solid rgba(6, 182, 212, 0.1)', borderRadius: 'var(--radius-sm)', fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                <strong>Cohort Training Path:</strong> You will complete milestones, submit mock project capstones, and take skills assessments. Maintaining a readiness score above 80% places you on the **Deployment Bench** for instant corporate allocation.
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+              <button
+                onClick={() => setWizardResult(null)}
+                style={{
+                  flex: 1,
+                  background: 'transparent',
+                  border: '1px solid var(--glass-border)',
+                  color: 'var(--text-secondary)',
+                  padding: '0.8rem',
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                  fontWeight: 600
+                }}
+              >
+                Re-Analyze Resume
+              </button>
+              <button
+                onClick={handleCompleteOnboarding}
+                style={{
+                  flex: 1,
+                  background: 'var(--gradient-primary)',
+                  border: 'none',
+                  color: '#fff',
+                  padding: '0.8rem',
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                  fontWeight: 600,
+                  boxShadow: 'var(--shadow-sm)'
+                }}
+              >
+                Join Cohort & Start Training
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   const isAvailable = profile.status === 'Bench';
+  const isTraining = profile.status === 'Training';
+
+  const skillNamesList = profile.skills ? profile.skills.map(s => s.name) : [];
 
   return (
     <div className="page-container">
       <div style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <h1 style={{ fontSize: '2rem', fontWeight: 700, background: 'var(--gradient-primary)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', display: 'inline-block' }}>
-            Professional Portal
+            Associate Portal
           </h1>
           <p style={{ color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
-            Welcome back, {profile.name}. Manage your project readiness and toggle availability.
+            Welcome back, {profile.name}. {isTraining ? "Track your cohort batch curriculum milestones." : "Manage your project readiness and bench availability."}
           </p>
         </div>
 
-        {/* Availability Switch */}
-        <div className="glass-card" style={{ padding: '0.75rem 1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', borderRadius: 'var(--radius-sm)' }}>
-          <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>Bench Availability</span>
-          <button 
-            onClick={handleToggleAvailability}
-            style={{
-              width: '50px',
-              height: '26px',
-              borderRadius: '13px',
-              background: isAvailable ? 'var(--accent-cyan)' : 'var(--bg-tertiary)',
-              border: '1px solid var(--glass-border)',
-              position: 'relative',
-              cursor: 'pointer',
-              transition: 'var(--transition-fast)'
-            }}
-          >
-            <div style={{
-              width: '20px',
-              height: '20px',
-              borderRadius: '50%',
-              background: '#fff',
-              position: 'absolute',
-              top: '2px',
-              left: isAvailable ? '26px' : '2px',
-              transition: 'var(--transition-fast)'
-            }} />
-          </button>
-          <span style={{ fontSize: '0.8rem', fontWeight: 600, color: isAvailable ? 'var(--accent-cyan)' : 'var(--text-muted)' }}>
-            {isAvailable ? 'AVAILABLE' : 'ENGAGED'}
-          </span>
-        </div>
+        {/* Availability Switch (Only if not in Training) */}
+        {!isTraining ? (
+          <div className="glass-card" style={{ padding: '0.75rem 1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', borderRadius: 'var(--radius-sm)' }}>
+            <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>Bench Availability</span>
+            <button 
+              onClick={handleToggleAvailability}
+              style={{
+                width: '50px',
+                height: '26px',
+                borderRadius: '13px',
+                background: isAvailable ? 'var(--accent-cyan)' : 'var(--bg-tertiary)',
+                border: '1px solid var(--glass-border)',
+                position: 'relative',
+                cursor: 'pointer',
+                transition: 'var(--transition-fast)'
+              }}
+            >
+              <div style={{
+                width: '20px',
+                height: '20px',
+                borderRadius: '50%',
+                background: '#fff',
+                position: 'absolute',
+                top: '2px',
+                left: isAvailable ? '26px' : '2px',
+                transition: 'var(--transition-fast)'
+              }} />
+            </button>
+            <span style={{ fontSize: '0.8rem', fontWeight: 600, color: isAvailable ? 'var(--accent-cyan)' : 'var(--text-muted)' }}>
+              {isAvailable ? 'AVAILABLE' : 'ENGAGED'}
+            </span>
+          </div>
+        ) : (
+          <div className="glass-card" style={{ padding: '0.75rem 1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--accent-indigo)' }}>
+            <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--accent-indigo)', animation: 'pulse 1.5s infinite' }}></div>
+            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--accent-indigo)' }}>TRAINING IN PROGRESS</span>
+          </div>
+        )}
       </div>
 
       {/* Metrics */}
@@ -227,18 +425,26 @@ export default function ProfessionalDashboard() {
         <div className="glass-card">
           <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontWeight: 500 }}>Readiness Score</div>
           <div style={{ fontSize: '2rem', fontWeight: 700, margin: '0.5rem 0', color: 'var(--accent-cyan)' }}>{profile.readiness_score}%</div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)' }}>Core Skills: {profile.skills.slice(0, 3).join(', ')}</div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)' }}>
+            Skills: {skillNamesList.slice(0, 3).join(', ') || 'No badges unlocked'}
+          </div>
         </div>
         <div className="glass-card">
-          <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontWeight: 500 }}>Active Projects</div>
-          <div style={{ fontSize: '2rem', fontWeight: 700, margin: '0.5rem 0', color: 'var(--accent-indigo)' }}>
-            {activeProjectName === 'None' ? '0' : '1'}
+          <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontWeight: 500 }}>
+            {isTraining ? 'Training Track' : 'Active Projects'}
           </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{activeProjectName}</div>
+          <div style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0.8rem 0', color: 'var(--accent-indigo)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {isTraining ? profile.training.track : (activeProjectName === 'None' ? '0 Projects' : '1 Active Project')}
+          </div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+            {isTraining ? `Batch: ${profile.training.cohort_code}` : activeProjectName}
+          </div>
         </div>
         <div className="glass-card">
           <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontWeight: 500 }}>Certifications</div>
-          <div style={{ fontSize: '2rem', fontWeight: 700, margin: '0.5rem 0', color: 'var(--accent-purple)' }}>{profile.skills.length}</div>
+          <div style={{ fontSize: '2rem', fontWeight: 700, margin: '0.5rem 0', color: 'var(--accent-purple)' }}>
+            {profile.skills ? profile.skills.length : 0}
+          </div>
           <div style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)' }}>AI verified badges</div>
         </div>
       </div>
@@ -252,7 +458,7 @@ export default function ProfessionalDashboard() {
           <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Prove your skills to unlock verified badges and boost matches.</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.5rem' }}>
             {assessments.map((test) => {
-              const alreadyHasSkill = profile.skills.includes(test.skill_name);
+              const alreadyHasSkill = skillNamesList.includes(test.skill_name);
               return (
                 <div key={test.id} style={{ padding: '0.75rem 1rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
@@ -284,37 +490,67 @@ export default function ProfessionalDashboard() {
           </div>
         </div>
 
-        {/* Recommended Engagements */}
-        <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Recommended Projects</h2>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-            {[
-              { company: 'Acme Corp', role: 'Solutions Architect (Cloud)', duration: '6 months', match: '96%' },
-              { company: 'Delta Labs', role: 'Security & Infrastructure Lead', duration: '3 months', match: '90%' }
-            ].map((proj, idx) => (
-              <div key={idx} style={{ padding: '0.75rem 1rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{proj.role}</div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{proj.company} • {proj.duration}</div>
+        {/* Training Cohort Progress (If Training) VS Recommended Engagements */}
+        {isTraining ? (
+          <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--accent-cyan)' }}>Cohort Progress</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', marginTop: '0.5rem' }}>
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '0.5rem' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Curriculum Milestones</span>
+                  <span style={{ fontWeight: 700, color: 'var(--accent-cyan)' }}>{profile.training.progress_percentage}%</span>
                 </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontWeight: 700, color: 'var(--accent-cyan)' }}>{proj.match}</div>
+                <div style={{ height: '8px', background: 'var(--bg-primary)', borderRadius: '4px', overflow: 'hidden', border: '1px solid var(--glass-border)' }}>
+                  <div style={{ height: '100%', width: `${profile.training.progress_percentage}%`, background: 'var(--gradient-primary)', borderRadius: '4px' }}></div>
                 </div>
               </div>
-            ))}
+
+              <div style={{ padding: '0.75rem', background: 'var(--bg-tertiary)', borderRadius: '4px', border: '1px solid var(--border-color)', fontSize: '0.8rem' }}>
+                <div style={{ color: 'var(--text-muted)', textTransform: 'uppercase', fontSize: '0.7rem', fontWeight: 600 }}>Cohort Trainer</div>
+                <div style={{ fontWeight: 600, marginTop: '0.15rem' }}>{profile.training.trainer}</div>
+              </div>
+
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                <strong>Next Milestone:</strong> Verify skill competencies in the Assessment Hub to unlock badges and complete curriculum tracks.
+              </div>
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+            <h2 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Recommended Projects</h2>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {[
+                { company: 'Acme Corp', role: 'Solutions Architect (Cloud)', duration: '6 months', match: '96%' },
+                { company: 'Delta Labs', role: 'Security & Infrastructure Lead', duration: '3 months', match: '90%' }
+              ].map((proj, idx) => (
+                <div key={idx} style={{ padding: '0.75rem 1rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{proj.role}</div>
+                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{proj.company} • {proj.duration}</div>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <div style={{ fontWeight: 700, color: 'var(--accent-cyan)' }}>{proj.match}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Skills List */}
         <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <h2 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Your Verified Skill Badges</h2>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-            {profile.skills.map((skill, idx) => (
-              <div key={idx} style={{ padding: '0.5rem 0.75rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
-                <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent-cyan)' }}></div>
-                <span style={{ fontSize: '0.8rem', fontWeight: 500 }}>{skill}</span>
-              </div>
-            ))}
+            {profile.skills && profile.skills.length > 0 ? (
+              profile.skills.map((skill, idx) => (
+                <div key={idx} style={{ padding: '0.5rem 0.75rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', display: 'align-items', gap: '0.4rem' }}>
+                  <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent-cyan)', display: 'inline-block', marginRight: '0.4rem' }}></div>
+                  <span style={{ fontSize: '0.8rem', fontWeight: 500 }}>{skill.name}</span>
+                </div>
+              ))
+            ) : (
+              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 'auto' }}>No verified badges yet. Verify assessments on the left to earn badges.</span>
+            )}
           </div>
         </div>
       </div>
@@ -337,7 +573,6 @@ export default function ProfessionalDashboard() {
         }}>
           <div className="glass-card" style={{ width: '100%', maxWidth: '600px', padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.5rem', boxShadow: 'var(--shadow-lg)' }}>
             
-            {/* Modal Header */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem' }}>
               <div>
                 <h3 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--accent-cyan)' }}>{activeTest.title}</h3>
@@ -353,21 +588,17 @@ export default function ProfessionalDashboard() {
               )}
             </div>
 
-            {/* Test Content: Question Panel OR Results Panel */}
             {!testResult ? (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                {/* Question Progress */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                   <span>Question {currentQuestionIdx + 1} of {activeTest.questions.length}</span>
                   <span>Min. score to pass: 80%</span>
                 </div>
 
-                {/* Question text */}
                 <div style={{ fontSize: '1.1rem', fontWeight: 500, lineHeight: 1.4, minHeight: '60px' }}>
                   {activeTest.questions[currentQuestionIdx].q}
                 </div>
 
-                {/* Options list */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
                   {activeTest.questions[currentQuestionIdx].options.map((option, oIdx) => {
                     const isSelected = selectedAnswers[currentQuestionIdx] === oIdx;
@@ -395,7 +626,6 @@ export default function ProfessionalDashboard() {
                   })}
                 </div>
 
-                {/* Navigation Buttons */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem' }}>
                   <button
                     disabled={currentQuestionIdx === 0}
@@ -450,7 +680,6 @@ export default function ProfessionalDashboard() {
                 </div>
               </div>
             ) : (
-              /* Test Results display */
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.25rem', textAlign: 'center', padding: '1rem 0' }}>
                 <div style={{
                   width: '64px',
@@ -481,7 +710,7 @@ export default function ProfessionalDashboard() {
                 </h4>
 
                 <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', maxWidth: '400px' }}>
-                  {testResult.message}
+                  {testResult.passed ? 'Excellent work! You have successfully passed the assessment and unlocked your skill badge.' : 'You did not achieve the required 80% passing score. Review the materials and retry.'}
                 </p>
 
                 <div style={{ display: 'flex', gap: '2rem', background: 'var(--bg-tertiary)', padding: '1rem 2rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', margin: '0.5rem 0' }}>
@@ -492,13 +721,13 @@ export default function ProfessionalDashboard() {
                   <div style={{ borderRight: '1px solid var(--border-color)' }}></div>
                   <div>
                     <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Correct</div>
-                    <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>{testResult.correctAnswers} / {testResult.totalQuestions}</div>
+                    <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>{testResult.correctCount} / {testResult.totalCount}</div>
                   </div>
                 </div>
 
-                {testResult.passed && testResult.unlockedSkill && (
+                {testResult.passed && (
                   <div style={{ fontSize: '0.85rem', color: 'var(--accent-cyan)', background: 'rgba(6, 182, 212, 0.06)', border: '1px dashed var(--accent-cyan)', padding: '0.5rem 1rem', borderRadius: '4px' }}>
-                    ✦ Verified Badge Unlocked: <strong>{testResult.unlockedSkill}</strong>
+                    ✦ Verified Badge Unlocked!
                   </div>
                 )}
 

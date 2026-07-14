@@ -40,3 +40,15 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
+
+# Virtual environments
+venv/
+.venv/
+env/
+
+# Large dataset files (ingest locally -- too big for git)
+Data/*.xlsx
+Data/*.csv
+
+# Python eggs
+*.egg-info/

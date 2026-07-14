@@ -39,6 +39,7 @@ export const api = {
     method: 'POST',
     body: JSON.stringify(userData)
   }),
+  getMe: () => fetchApi('/auth/me'),
 
   // Talent Inventory
   getProfessionals: () => fetchApi('/professionals'),
@@ -75,5 +76,9 @@ export const api = {
   submitAssessment: (id, submission) => fetchApi(`/assessments/${id}/submit`, {
     method: 'POST',
     body: JSON.stringify(submission)
+  }),
+  parseResume: (resumeData) => fetchApi('/candidates/parse-resume', {
+    method: 'POST',
+    body: JSON.stringify(resumeData)
   })
 };
