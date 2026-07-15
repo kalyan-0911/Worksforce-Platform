@@ -1,774 +1,402 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../services/api';
+import toast from 'react-hot-toast';
+import OrganizationProfileModal from '../components/modals/OrganizationProfileModal';
+import InvitationModal from '../components/modals/InvitationModal';
 
-export default function ProfessionalDashboard() {
-  const [profile, setProfile] = useState(null);
-  const [activeProjectName, setActiveProjectName] = useState('None');
-  const [assessments, setAssessments] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+const TIERS = [
+  { min: 90, name: 'Diamond', color: '#60a5fa', icon: '💎' },
+  { min: 75, name: 'Gold',    color: '#fbbf24', icon: '🏆' },
+  { min: 50, name: 'Silver',  color: '#94a3b8', icon: '🥈' },
+  { min: 0,  name: 'Bronze',  color: '#b45309', icon: '🥉' },
+];
+const getTier = (score) => TIERS.find(t => score >= t.min) || TIERS[3];
 
-  // Assessment states
-  const [activeTest, setActiveTest] = useState(null);
-  const [currentQuestionIdx, setCurrentQuestionIdx] = useState(0);
-  const [selectedAnswers, setSelectedAnswers] = useState([]);
-  const [testResult, setTestResult] = useState(null);
-  const [submittingTest, setSubmittingTest] = useState(false);
+const OPP_STATUS_COLOR = {
+  Pending:            '#f59e0b',
+  Accepted:           '#10b981',
+  Rejected:           '#ef4444',
+  Candidate_Requested:'#6366f1',
+};
 
-  // Resume Onboarding Wizard states
-  const [resumeText, setResumeText] = useState('');
-  const [parsing, setParsing] = useState(false);
-  const [wizardResult, setWizardResult] = useState(null);
+export default function ProfessionalDashboard({ activeTab, setActiveTab }) {
+  const [profile, setProfile]           = useState(null);
+  const [opportunities, setOpportunities] = useState([]);
+  const [reverseMatches, setReverseMatches] = useState([]);
+  const [careerPath, setCareerPath]     = useState(null);
+  const [loading, setLoading]           = useState(true);
+  const [selectedOrgId, setSelectedOrgId] = useState(null);
+  const [selectedOpportunity, setSelectedOpportunity] = useState(null);
+  const [careerLoading, setCareerLoading] = useState(false);
 
-  const loadProfileData = async () => {
-    try {
-      setError(null);
-      const [meData, projects, tests] = await Promise.all([
-        api.getMe(),
-        api.getProjects(),
-        api.getAssessments()
-      ]);
-      
-      const myProfile = meData.candidate;
-      setProfile(myProfile);
+  const tab = activeTab || 'professional';
 
-      if (myProfile) {
-        const myProject = projects.find(proj => 
-          proj.status === 'Active' && 
-          proj.members && proj.members.some(m => m.id === myProfile.id)
-        );
-        if (myProject) {
-          setActiveProjectName(myProject.name);
-        } else {
-          setActiveProjectName('None');
-        }
-      }
-
-      setAssessments(tests);
-    } catch (err) {
-      console.error('Error fetching profile data:', err);
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadProfileData();
-  }, []);
-
-  const handleToggleAvailability = async () => {
-    if (!profile) return;
-    const newStatus = profile.status === 'Bench' ? 'Engaged' : 'Bench';
-    
-    try {
-      await api.toggleAvailability(profile.id, newStatus);
-      setProfile(prev => ({ ...prev, status: newStatus }));
-    } catch (err) {
-      alert(`Failed to update availability: ${err.message}`);
-    }
-  };
-
-  const handleParseResume = async (e) => {
-    e.preventDefault();
-    if (!resumeText.trim()) {
-      alert('Please paste your resume details.');
-      return;
-    }
-
-    setParsing(true);
-    setWizardResult(null);
-    try {
-      const data = await api.parseResume({ resume_text: resumeText });
-      setWizardResult(data.recommendations);
-    } catch (err) {
-      alert(`Failed to parse resume: ${err.message}`);
-    } finally {
-      setParsing(false);
-    }
-  };
-
-  const handleCompleteOnboarding = () => {
-    setResumeText('');
-    setWizardResult(null);
-    loadProfileData();
-  };
-
-  const startTest = async (testId) => {
+  const load = useCallback(async () => {
     setLoading(true);
     try {
-      const fullTest = await api.getAssessmentById(testId);
-      setActiveTest(fullTest);
-      setCurrentQuestionIdx(0);
-      setSelectedAnswers(new Array(fullTest.questions.length).fill(null));
-      setTestResult(null);
-    } catch (err) {
-      alert(`Failed to load assessment: ${err.message}`);
+      const [meRes, oppsRes, matchesRes] = await Promise.allSettled([
+        api.getMe(),
+        api.getOpportunities(),
+        api.getReverseMatches(),
+      ]);
+
+      const me = meRes.status === 'fulfilled' ? meRes.value : null;
+      const cand = me?.candidate || null;
+      setProfile(cand);
+      setOpportunities(oppsRes.status === 'fulfilled' ? (oppsRes.value || []) : []);
+      let uniqueMatches = [];
+      if (matchesRes.status === 'fulfilled' && matchesRes.value) {
+        const seen = new Set();
+        uniqueMatches = matchesRes.value.filter(m => {
+          const key = `${m.company}-${m.title}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+      }
+      setReverseMatches(uniqueMatches);
+
+      // Load career path for the profile tab
+      if (cand?.id && tab === 'career') {
+        loadCareerPath(cand.id);
+      }
     } finally {
       setLoading(false);
     }
-  };
+  }, [tab]);
 
-  const selectOption = (optIdx) => {
-    setSelectedAnswers(prev => {
-      const updated = [...prev];
-      updated[currentQuestionIdx] = optIdx;
-      return updated;
-    });
-  };
-
-  const handleNextQuestion = () => {
-    if (currentQuestionIdx < activeTest.questions.length - 1) {
-      setCurrentQuestionIdx(prev => prev + 1);
-    }
-  };
-
-  const handlePrevQuestion = () => {
-    if (currentQuestionIdx > 0) {
-      setCurrentQuestionIdx(prev => prev - 1);
-    }
-  };
-
-  const submitTestAnswers = async () => {
-    if (selectedAnswers.includes(null)) {
-      alert('Please answer all questions before submitting.');
-      return;
-    }
-
-    setSubmittingTest(true);
+  const loadCareerPath = async (id) => {
+    setCareerLoading(true);
     try {
-      const result = await api.submitAssessment(activeTest.id, {
-        professionalId: profile.id,
-        answers: selectedAnswers
-      });
-      setTestResult(result);
-    } catch (err) {
-      alert(`Failed to submit assessment: ${err.message}`);
+      const data = await api.getCareerPath(id);
+      setCareerPath(data);
+    } catch(e) {
+      console.error('Career path error', e);
     } finally {
-      setSubmittingTest(false);
+      setCareerLoading(false);
     }
   };
 
-  const closeTestModal = () => {
-    setActiveTest(null);
-    setTestResult(null);
-    setSelectedAnswers([]);
-    setCurrentQuestionIdx(0);
-    loadProfileData();
+  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    if (tab === 'career' && profile?.id && !careerPath) loadCareerPath(profile.id);
+  }, [tab, profile]);
+
+  const handleAccept = async (id) => {
+    try { await api.acceptOpportunity(id); load(); } catch(e) { toast.error(e.message || 'An error occurred'); }
+  };
+  const handleReject = async (id) => {
+    try { await api.rejectOpportunity(id); load(); } catch(e) { toast.error(e.message || 'An error occurred'); }
+  };
+  const handleToggleAvailability = async () => {
+    if (!profile) return;
+    const next = profile.status === 'Bench' ? 'Engaged' : 'Bench';
+    try { await api.toggleAvailability(profile.id, next); load(); } catch(e) { toast.error(e.message || 'An error occurred'); }
   };
 
-  if (loading) {
-    return (
-      <div className="page-container" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '60vh' }}>
-        <div style={{ width: '40px', height: '40px', border: '3px solid rgba(255,255,255,0.05)', borderTopColor: 'var(--accent-cyan)', borderRadius: '50%', animation: 'spin 1s linear infinite' }} />
+  if (loading) return (
+    <div className="page-container" style={{ display:'flex', justifyContent:'center', alignItems:'center', height:'60vh' }}>
+      <div style={{ width:40, height:40, border:'3px solid rgba(0,0,0,0.05)', borderTopColor:'#f43f5e', borderRadius:'50%', animation:'spin 1s linear infinite' }} />
+    </div>
+  );
+
+  if (!profile) return (
+    <div className="page-container">
+      <div className="glass-card" style={{ textAlign:'center', padding:'3rem' }}>
+        <div style={{ fontSize:'2rem', marginBottom:'0.75rem' }}>👤</div>
+        <div style={{ fontWeight:600, marginBottom:'0.5rem' }}>Profile not found</div>
+        <div style={{ fontSize:'0.85rem', color:'var(--text-muted)' }}>Your candidate profile could not be loaded. Please contact support.</div>
       </div>
-    );
-  }
+    </div>
+  );
 
-  if (error) {
-    return (
-      <div className="page-container">
-        <div className="glass-card" style={{ border: '1px solid rgba(239, 68, 68, 0.4)', padding: '2rem', textAlign: 'center' }}>
-          <h3 style={{ color: '#ef4444', marginBottom: '1rem', fontSize: '1.25rem' }}>Connection/Loading Error</h3>
-          <p style={{ color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>{error}</p>
-          <button 
-            onClick={loadProfileData} 
-            style={{
-              background: 'var(--gradient-primary)',
-              color: '#fff',
-              border: 'none',
-              padding: '0.6rem 1.5rem',
-              borderRadius: 'var(--radius-sm)',
-              cursor: 'pointer',
-              fontWeight: 600,
-              fontFamily: 'var(--font-family)'
-            }}
-          >
-            Retry Connection
-          </button>
-        </div>
-      </div>
-    );
-  }
+  const tier = getTier(profile.readiness_score || 0);
+  const skills = profile.skills || [];
+  const pendingOpps = opportunities.filter(o => o.status === 'Pending');
+  const acceptedOpps = opportunities.filter(o => o.status === 'Accepted');
+  const rejectedOpps = opportunities.filter(o => o.status === 'Rejected');
 
-  if (!profile) {
-    return (
-      <div className="page-container">
-        <div className="glass-card" style={{ padding: '2rem', textAlign: 'center' }}>
-          <h3 style={{ color: 'var(--accent-cyan)', marginBottom: '1rem' }}>No Profile Found</h3>
-          <p style={{ color: 'var(--text-secondary)' }}>The database is connected but no candidate profiles could be loaded for this account.</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Detect un-onboarded new user
-  const needsOnboarding = !profile.training || !profile.training.cohort_code;
-
-  if (needsOnboarding) {
-    return (
-      <div className="page-container" style={{ maxWidth: '800px', margin: '0 auto' }}>
-        <div style={{ marginBottom: '2rem' }}>
-          <h1 style={{ fontSize: '2rem', fontWeight: 700, background: 'var(--gradient-primary)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', display: 'inline-block' }}>
-            Associate Onboarding Wizard
-          </h1>
-          <p style={{ color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
-            Configure your target technology track and synchronize your skills using our resume analysis engine.
-          </p>
-        </div>
-
-        {!wizardResult ? (
-          <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            <div>
-              <h2 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '0.5rem' }}>Analyze Profile Resume</h2>
-              <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                Paste your resume text below (experience, skill sets, certifications). Our engine will parse your skills and recommend the best Revature-style training cohort track.
-              </p>
+  // ── PROFILE TAB ──────────────────────────────────────────────────────────
+  const renderProfile = () => (
+    <div>
+      {/* Profile Header */}
+      <div className="glass-card" style={{ marginBottom:'1.5rem', borderLeft:`4px solid ${tier.color}` }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:'1rem' }}>
+          <div>
+            <div style={{ display:'flex', alignItems:'center', gap:'0.75rem' }}>
+              <h2 style={{ fontSize:'1.5rem', fontWeight:700, margin:0 }}>{profile.name || 'Professional'}</h2>
+              <span style={{ fontSize:'1.2rem' }}>{tier.icon}</span>
+              <span style={{ fontSize:'0.75rem', fontWeight:700, padding:'0.2rem 0.6rem', borderRadius:'8px', background: `${tier.color}22`, color: tier.color }}>{tier.name}</span>
             </div>
-
-            <form onSubmit={handleParseResume} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-              <textarea
-                value={resumeText}
-                onChange={(e) => setResumeText(e.target.value)}
-                placeholder={`e.g.
-JOHN SMITH
-Email: john@gmail.com
-SUMMARY: Software developer with 2 years of experience.
-SKILLS: React, JavaScript, HTML, CSS, Docker, Python, Git...`}
-                rows="10"
-                style={{
-                  background: 'var(--bg-primary)',
-                  border: '1px solid var(--glass-border)',
-                  color: '#fff',
-                  padding: '1rem',
-                  borderRadius: 'var(--radius-sm)',
-                  outline: 'none',
-                  fontSize: '0.9rem',
-                  fontFamily: 'var(--font-family)',
-                  resize: 'vertical',
-                  lineHeight: 1.5
-                }}
-              />
-
-              <button
-                type="submit"
-                disabled={parsing}
-                style={{
-                  background: parsing ? 'var(--bg-tertiary)' : 'var(--gradient-primary)',
-                  border: 'none',
-                  color: '#fff',
-                  padding: '0.9rem',
-                  borderRadius: 'var(--radius-sm)',
-                  fontWeight: 600,
-                  fontSize: '0.95rem',
-                  cursor: parsing ? 'not-allowed' : 'pointer',
-                  textAlign: 'center',
-                  boxShadow: 'var(--shadow-sm)'
-                }}
-              >
-                {parsing ? 'Analyzing Skills & Tracks...' : 'Analyze Resume'}
-              </button>
-            </form>
+            <div style={{ color:'var(--text-secondary)', marginTop:'0.25rem' }}>{profile.role || profile.target_role || 'Professional'}</div>
+            {profile.experience_years && <div style={{ fontSize:'0.8rem', color:'var(--text-muted)', marginTop:'0.1rem' }}>{profile.experience_years} years experience</div>}
           </div>
-        ) : (
-          <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem' }}>
-              <div>
-                <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--accent-cyan)' }}>Cohort Alignment Recommendation</h2>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Analysis based on parsed resume keywords</span>
-              </div>
+          <div style={{ display:'flex', gap:'0.75rem', flexWrap:'wrap', alignItems:'center' }}>
+            <div style={{ textAlign:'center' }}>
+              <div style={{ fontSize:'1.8rem', fontWeight:700, color: tier.color }}>{profile.readiness_score || 0}%</div>
+              <div style={{ fontSize:'0.7rem', color:'var(--text-muted)' }}>Readiness</div>
             </div>
+            <button onClick={handleToggleAvailability}
+              style={{ padding:'0.5rem 1rem', background: profile.status==='Bench'?'rgba(16,185,129,0.1)':'rgba(239,68,68,0.1)', border:`1px solid ${profile.status==='Bench'?'#10b981':'#ef4444'}`, color: profile.status==='Bench'?'#10b981':'#ef4444', borderRadius:'8px', cursor:'pointer', fontWeight:600, fontSize:'0.82rem' }}>
+              {profile.status === 'Bench' ? '✓ Available' : '● Engaged'}
+            </button>
+          </div>
+        </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div style={{ padding: '1rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between' }}>
-                <div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>RECOMMENDED TRAINING TRACK</div>
-                  <div style={{ fontWeight: 700, fontSize: '1.15rem', color: '#fff', marginTop: '0.2rem' }}>{wizardResult.track}</div>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>COHORT BATCH CODE</div>
-                  <div style={{ fontWeight: 700, fontSize: '1.15rem', color: 'var(--accent-indigo)', marginTop: '0.2rem' }}>{wizardResult.cohort_code}</div>
-                </div>
-              </div>
+        {/* Progress bar */}
+        <div style={{ marginTop:'1.25rem' }}>
+          <div style={{ display:'flex', justifyContent:'space-between', fontSize:'0.75rem', color:'var(--text-muted)', marginBottom:'0.35rem' }}>
+            <span>Readiness Progress</span>
+            <span>{profile.readiness_score || 0} / 100</span>
+          </div>
+          <div style={{ height:8, background:'rgba(0,0,0,0.06)', borderRadius:4, overflow:'hidden' }}>
+            <div style={{ height:'100%', width:`${profile.readiness_score || 0}%`, background: `linear-gradient(90deg, ${tier.color}, ${tier.color}bb)`, borderRadius:4, transition:'width 0.5s ease' }} />
+          </div>
+          <div style={{ fontSize:'0.72rem', color:'var(--text-muted)', marginTop:'0.3rem' }}>
+            {profile.readiness_score >= 80 ? '✓ Eligible for deployment' : `Need ${80 - (profile.readiness_score||0)} more points to unlock deployment eligibility`}
+          </div>
+        </div>
+      </div>
 
-              <div>
-                <h4 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--accent-cyan)' }}>Verified Skills Matched:</h4>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                  {profile.skills && profile.skills.length > 0 ? (
-                    profile.skills.map((s, idx) => (
-                      <span key={idx} style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem', background: 'rgba(6, 182, 212, 0.08)', color: 'var(--accent-cyan)', border: '1px solid rgba(6, 182, 212, 0.2)', borderRadius: '4px' }}>
-                        {s.name}
-                      </span>
-                    ))
-                  ) : (
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>No default skills matched. You will build them during training!</span>
-                  )}
-                </div>
-              </div>
-
-              {wizardResult.missing_skills && wizardResult.missing_skills.length > 0 && (
-                <div>
-                  <h4 style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text-secondary)' }}>Target Skills to Acquire during Cohort:</h4>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                    {wizardResult.missing_skills.map((s, idx) => (
-                      <span key={idx} style={{ fontSize: '0.75rem', padding: '0.25rem 0.5rem', background: 'rgba(255, 255, 255, 0.02)', color: 'var(--text-secondary)', border: '1px solid var(--border-color)', borderRadius: '4px' }}>
-                        {s}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div style={{ padding: '0.75rem 1rem', background: 'rgba(6, 182, 212, 0.04)', border: '1px solid rgba(6, 182, 212, 0.1)', borderRadius: 'var(--radius-sm)', fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-                <strong>Cohort Training Path:</strong> You will complete milestones, submit mock project capstones, and take skills assessments. Maintaining a readiness score above 80% places you on the **Deployment Bench** for instant corporate allocation.
-              </div>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'1.5rem' }}>
+        {/* Summary */}
+        <div className="glass-card">
+          <h3 style={{ fontSize:'0.9rem', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.5px', color:'var(--text-muted)', marginBottom:'0.75rem' }}>Professional Summary</h3>
+          <p style={{ fontSize:'0.88rem', color:'var(--text-secondary)', lineHeight:1.6 }}>
+            {profile.summary || `${profile.name || 'This professional'} is a ${profile.role || 'professional'} with ${profile.experience_years || 'several'} years of experience.`}
+          </p>
+          {profile.education && (
+            <div style={{ marginTop:'0.75rem', fontSize:'0.82rem', color:'var(--text-secondary)' }}>
+              🎓 <strong>Education:</strong> {typeof profile.education === 'string' ? profile.education : JSON.stringify(profile.education)}
             </div>
+          )}
+        </div>
 
-            <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
-              <button
-                onClick={() => setWizardResult(null)}
-                style={{
-                  flex: 1,
-                  background: 'transparent',
-                  border: '1px solid var(--glass-border)',
-                  color: 'var(--text-secondary)',
-                  padding: '0.8rem',
-                  borderRadius: 'var(--radius-sm)',
-                  cursor: 'pointer',
-                  fontWeight: 600
-                }}
-              >
-                Re-Analyze Resume
-              </button>
-              <button
-                onClick={handleCompleteOnboarding}
-                style={{
-                  flex: 1,
-                  background: 'var(--gradient-primary)',
-                  border: 'none',
-                  color: '#fff',
-                  padding: '0.8rem',
-                  borderRadius: 'var(--radius-sm)',
-                  cursor: 'pointer',
-                  fontWeight: 600,
-                  boxShadow: 'var(--shadow-sm)'
-                }}
-              >
-                Join Cohort & Start Training
-              </button>
+        {/* Skills */}
+        <div className="glass-card">
+          <h3 style={{ fontSize:'0.9rem', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.5px', color:'var(--text-muted)', marginBottom:'0.75rem' }}>Skills</h3>
+          {skills.length === 0 ? (
+            <div style={{ fontSize:'0.85rem', color:'var(--text-muted)' }}>Upload your resume in Career Path to extract skills.</div>
+          ) : (
+            <div style={{ display:'flex', flexWrap:'wrap', gap:'0.4rem' }}>
+              {skills.map((s, i) => {
+                const name = typeof s === 'string' ? s : s.name;
+                const verified = typeof s === 'string' ? false : s.verified;
+                return (
+                  <span key={i} style={{ padding:'0.3rem 0.65rem', borderRadius:'6px', fontSize:'0.78rem', background: verified?'rgba(139,92,246,0.1)':'rgba(0,0,0,0.05)', border: verified?'1px solid rgba(139,92,246,0.3)':'1px solid var(--border-color)', color: verified?'#8b5cf6':'var(--text-secondary)' }}>
+                    {name}{verified && ' ✓'}
+                  </span>
+                );
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* Key Strengths */}
+        {profile.key_strengths && profile.key_strengths.length > 0 && (
+          <div className="glass-card">
+            <h3 style={{ fontSize:'0.9rem', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.5px', color:'var(--text-muted)', marginBottom:'0.75rem' }}>Key Strengths</h3>
+            <ul style={{ paddingLeft:'1.25rem', display:'flex', flexDirection:'column', gap:'0.3rem' }}>
+              {profile.key_strengths.map((s, i) => <li key={i} style={{ fontSize:'0.85rem', color:'var(--text-secondary)' }}>{s}</li>)}
+            </ul>
+          </div>
+        )}
+
+        {/* Areas to Improve */}
+        {profile.areas_to_improve && profile.areas_to_improve.length > 0 && (
+          <div className="glass-card">
+            <h3 style={{ fontSize:'0.9rem', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.5px', color:'var(--text-muted)', marginBottom:'0.75rem' }}>Growth Areas</h3>
+            <ul style={{ paddingLeft:'1.25rem', display:'flex', flexDirection:'column', gap:'0.3rem' }}>
+              {profile.areas_to_improve.map((s, i) => <li key={i} style={{ fontSize:'0.85rem', color:'var(--text-secondary)' }}>{s}</li>)}
+            </ul>
+          </div>
+        )}
+
+        {/* Training */}
+        {profile.training && (
+          <div className="glass-card" style={{ borderTop:`3px solid var(--accent-indigo)` }}>
+            <h3 style={{ fontSize:'0.9rem', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.5px', color:'var(--text-muted)', marginBottom:'0.75rem' }}>Training Track</h3>
+            <div style={{ fontWeight:600, color:'var(--accent-indigo)' }}>{profile.training.track}</div>
+            <div style={{ fontSize:'0.8rem', color:'var(--text-muted)', marginTop:'0.2rem' }}>Cohort: {profile.training.cohort_code}</div>
+            {profile.training.trainer && <div style={{ fontSize:'0.8rem', color:'var(--text-secondary)', marginTop:'0.1rem' }}>Trainer: {profile.training.trainer}</div>}
+            <div style={{ marginTop:'0.75rem' }}>
+              <div style={{ display:'flex', justifyContent:'space-between', fontSize:'0.75rem', color:'var(--text-muted)', marginBottom:'0.3rem' }}>
+                <span>Progress</span><span>{profile.training.progress_percentage || 0}%</span>
+              </div>
+              <div style={{ height:6, background:'rgba(0,0,0,0.06)', borderRadius:3, overflow:'hidden' }}>
+                <div style={{ height:'100%', width:`${profile.training.progress_percentage || 0}%`, background:'var(--gradient-primary)', borderRadius:3 }} />
+              </div>
             </div>
           </div>
         )}
       </div>
-    );
-  }
+    </div>
+  );
 
-  const isAvailable = profile.status === 'Bench';
-  const isTraining = profile.status === 'Training';
+  // ── OPPORTUNITIES TAB ─────────────────────────────────────────────────────
+  const renderOpportunities = () => (
+    <div>
+      <h3 style={{ fontWeight:700, fontSize:'1.1rem', marginBottom:'1.25rem' }}>My Invitations</h3>
 
-  const skillNamesList = profile.skills ? profile.skills.map(s => s.name) : [];
+      {opportunities.length === 0 ? (
+        <div className="glass-card" style={{ textAlign:'center', padding:'3rem', color:'var(--text-muted)' }}>
+          <div style={{ fontSize:'2rem', marginBottom:'0.75rem' }}>📬</div>
+          <div style={{ fontWeight:600, marginBottom:'0.5rem' }}>No invitations yet</div>
+          <div style={{ fontSize:'0.85rem' }}>Employers will send you invitations once they find a match for their requirements.</div>
+          <div style={{ fontSize:'0.82rem', marginTop:'0.5rem' }}>You can also express interest in jobs via the Job Market tab.</div>
+        </div>
+      ) : (
+        <div style={{ display:'flex', flexDirection:'column', gap:'0.75rem' }}>
+          {opportunities.map((opp, i) => (
+            <div key={i} className="glass-card" style={{ borderLeft:`3px solid ${OPP_STATUS_COLOR[opp.status] || 'var(--border-color)'}` }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
+                <div>
+                  <div style={{ fontWeight:600, fontSize:'0.95rem' }}>{opp.role || 'Role'} — {opp.project_name}</div>
+                  <div style={{ fontSize:'0.8rem', color:'var(--text-muted)', marginTop:'0.15rem' }}>From: {opp.employer_name || 'Organization'}</div>
+                </div>
+                <span style={{ padding:'0.25rem 0.65rem', borderRadius:'8px', fontSize:'0.72rem', fontWeight:600, background:`${OPP_STATUS_COLOR[opp.status]}22`, color: OPP_STATUS_COLOR[opp.status] || 'var(--text-muted)', border:`1px solid ${OPP_STATUS_COLOR[opp.status]}44` }}>
+                  {opp.status === 'Candidate_Requested' ? 'You Requested' : opp.status}
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: '0.75rem', marginTop: '0.9rem' }}>
+                <button onClick={() => setSelectedOpportunity(opp)}
+                  style={{ flex: 1, padding: '0.5rem', background: 'transparent', border: '1px solid var(--accent-indigo)', color: 'var(--accent-indigo)', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.82rem' }}>
+                  View Invitation Details
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
+  // ── CAREER PATH TAB ───────────────────────────────────────────────────────
+  const renderCareer = () => (
+    <div>
+      <div style={{ marginBottom:'1.25rem' }}>
+        <h3 style={{ fontWeight:700, fontSize:'1.1rem', margin:0 }}>AI Career Path & Insights</h3>
+        <p style={{ color:'var(--text-muted)', fontSize:'0.85rem', marginTop:'0.25rem' }}>Generated from your profile, skills, and readiness data.</p>
+      </div>
+
+      {/* AI Recommended Jobs */}
+      <div className="glass-card" style={{ marginBottom:'1.5rem' }}>
+        <h3 style={{ fontSize:'1rem', fontWeight:600, marginBottom:'1rem' }}>🎯 Top AI Job Matches</h3>
+        {reverseMatches.length === 0 ? (
+          <div style={{ color:'var(--text-muted)', fontSize:'0.85rem', textAlign:'center', padding:'1.5rem' }}>
+            No matches found yet. Ensure your profile has skills listed.
+          </div>
+        ) : (
+          <div style={{ display:'flex', flexDirection:'column', gap:'0.85rem' }}>
+            {reverseMatches.slice(0,3).map((m, i) => (
+              <div key={i} style={{ padding:'1rem', background:'var(--bg-tertiary)', borderRadius:'8px', border:'1px solid var(--border-color)' }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
+                  <div>
+                    <div style={{ fontWeight:600, fontSize:'0.9rem' }}>{m.title} <span style={{ color:'var(--text-muted)' }}>@ {m.company}</span></div>
+                    <div style={{ fontSize:'0.75rem', color:'var(--text-muted)', marginTop:'0.15rem' }}>{m.location}</div>
+                  </div>
+                  <div style={{ fontWeight:700, color:'#10b981', fontSize:'1.05rem' }}>{m.matchScore}%</div>
+                </div>
+                {m.explanation && (
+                  <p style={{ fontSize:'0.8rem', color:'var(--text-secondary)', lineHeight:1.5, marginTop:'0.5rem', padding:'0.5rem', background:'rgba(16,185,129,0.04)', borderRadius:'5px', borderLeft:'2px solid #10b981' }}>
+                    {m.explanation}
+                  </p>
+                )}
+                <button onClick={async () => {
+                    try { await api.requestOpportunity(m.job_id); toast.success('Interest expressed! The employer will be notified.'); }
+                    catch(e) { toast.error(e.message || 'An error occurred'); }
+                  }}
+                  style={{ marginTop:'0.65rem', padding:'0.35rem 0.85rem', background:'var(--gradient-primary)', border:'none', color:'#fff', borderRadius:'5px', cursor:'pointer', fontSize:'0.78rem', fontWeight:600 }}>
+                  Express Interest
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* AI Learning Journey */}
+      <div className="glass-card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.25rem' }}>
+          <h3 style={{ fontSize:'1.05rem', fontWeight:700, margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ padding: '0.3rem', background: 'rgba(16,185,129,0.1)', color: '#10b981', borderRadius: '8px' }}>🎓</span> 
+            Personalized Learning Journey
+          </h3>
+          <span style={{ fontSize: '0.75rem', color: 'var(--accent-indigo)', fontWeight: 600, padding: '0.2rem 0.6rem', border: '1px solid var(--accent-indigo)', borderRadius: '12px' }}>AI Generated</span>
+        </div>
+
+        {careerLoading ? (
+          <div style={{ display:'flex', justifyContent:'center', padding:'3rem' }}>
+            <div style={{ width:32, height:32, border:'3px solid rgba(0,0,0,0.05)', borderTopColor:'var(--accent-indigo)', borderRadius:'50%', animation:'spin 1s linear infinite' }} />
+          </div>
+        ) : careerPath ? (
+          <div style={{ position: 'relative', paddingLeft: '1.5rem', borderLeft: '2px solid rgba(16,185,129,0.2)' }}>
+            
+            {/* Step 1: Current Base */}
+            {careerPath.current_role && (
+              <div style={{ position: 'relative', marginBottom: '2rem' }}>
+                <div style={{ position: 'absolute', left: '-2.05rem', top: '0.2rem', width: '16px', height: '16px', borderRadius: '50%', background: 'var(--bg-primary)', border: '4px solid #94a3b8' }} />
+                <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Step 1: Current Baseline</div>
+                <div style={{ fontWeight: 600, fontSize: '1.05rem', marginTop: '0.25rem', color: 'var(--text-primary)' }}>{careerPath.current_role}</div>
+              </div>
+            )}
+
+            {/* Step 2: Skill Acquisition */}
+            {careerPath.skills_to_acquire && careerPath.skills_to_acquire.length > 0 && (
+              <div style={{ position: 'relative', marginBottom: '2rem' }}>
+                <div style={{ position: 'absolute', left: '-2.05rem', top: '0.2rem', width: '16px', height: '16px', borderRadius: '50%', background: 'var(--bg-primary)', border: '4px solid #f59e0b' }} />
+                <div style={{ fontSize: '0.75rem', color: '#f59e0b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Step 2: Skill Acquisition</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.75rem' }}>
+                  {careerPath.skills_to_acquire.map((s,i) => (
+                    <div key={i} style={{ padding: '0.4rem 0.8rem', background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.2)', borderRadius: '6px', fontSize: '0.8rem', color: '#b45309', fontWeight: 600 }}>
+                      + {s}
+                    </div>
+                  ))}
+                </div>
+                {careerPath.timeline && <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.5rem' }}>⏱ Est. time to acquire: {careerPath.timeline}</div>}
+              </div>
+            )}
+
+            {/* Step 3: Target Role */}
+            {careerPath.next_role && (
+              <div style={{ position: 'relative', marginBottom: '1rem' }}>
+                <div style={{ position: 'absolute', left: '-2.05rem', top: '0.2rem', width: '16px', height: '16px', borderRadius: '50%', background: 'var(--bg-primary)', border: '4px solid #10b981' }} />
+                <div style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Step 3: Target Role Unlocked</div>
+                <div style={{ fontWeight: 700, fontSize: '1.1rem', marginTop: '0.25rem', color: '#10b981' }}>{careerPath.next_role}</div>
+                {careerPath.summary && (
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.6, marginTop: '0.75rem', background: 'var(--bg-tertiary)', padding: '1rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                    {careerPath.summary}
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div style={{ color:'var(--text-muted)', fontSize:'0.85rem', textAlign:'center', padding:'2rem', border: '1px dashed var(--border-color)', borderRadius: '8px' }}>
+            Learning journey analysis requires your profile to be complete. Add more skills to generate your path.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  const tabContent = { professional: renderProfile, opportunities: renderOpportunities, career: renderCareer };
+  const render = tabContent[tab] || renderProfile;
 
   return (
-    <div className="page-container">
-      <div style={{ marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <h1 style={{ fontSize: '2rem', fontWeight: 700, background: 'var(--gradient-primary)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', display: 'inline-block' }}>
-            Professional Dashboard
-          </h1>
-          <p style={{ color: 'var(--text-secondary)', marginTop: '0.25rem' }}>
-            Welcome back, {profile.name}. {isTraining ? "Track your cohort batch curriculum milestones." : "Manage your project readiness and bench availability."}
-          </p>
-        </div>
+    <div className="page-container" style={{ padding: '2rem 3rem' }}>
+      {render()}
 
-        {/* Availability Switch (Only if not in Training) */}
-        {!isTraining ? (
-          <div className="glass-card" style={{ padding: '0.75rem 1.25rem', display: 'flex', alignItems: 'center', gap: '1rem', borderRadius: 'var(--radius-sm)' }}>
-            <span style={{ fontSize: '0.9rem', fontWeight: 500 }}>Bench Availability</span>
-            <button 
-              onClick={handleToggleAvailability}
-              style={{
-                width: '50px',
-                height: '26px',
-                borderRadius: '13px',
-                background: isAvailable ? 'var(--accent-cyan)' : 'var(--bg-tertiary)',
-                border: '1px solid var(--glass-border)',
-                position: 'relative',
-                cursor: 'pointer',
-                transition: 'var(--transition-fast)'
-              }}
-            >
-              <div style={{
-                width: '20px',
-                height: '20px',
-                borderRadius: '50%',
-                background: '#fff',
-                position: 'absolute',
-                top: '2px',
-                left: isAvailable ? '26px' : '2px',
-                transition: 'var(--transition-fast)'
-              }} />
-            </button>
-            <span style={{ fontSize: '0.8rem', fontWeight: 600, color: isAvailable ? 'var(--accent-cyan)' : 'var(--text-muted)' }}>
-              {isAvailable ? 'AVAILABLE' : 'ENGAGED'}
-            </span>
-          </div>
-        ) : (
-          <div className="glass-card" style={{ padding: '0.75rem 1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--accent-indigo)' }}>
-            <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--accent-indigo)', animation: 'pulse 1.5s infinite' }}></div>
-            <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--accent-indigo)' }}>TRAINING IN PROGRESS</span>
-          </div>
-        )}
-      </div>
-
-      {/* Marketplace Jobs */}
-      <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--text-muted)', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
-        Marketplace Jobs
-      </h2>
-      <div className="glass-card" style={{ marginBottom: '2rem', padding: '2rem', textAlign: 'center', border: '1px dashed var(--border-color)' }}>
-        <h3 style={{ color: 'var(--text-secondary)' }}>Explore Public Jobs</h3>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem', marginTop: '0.5rem' }}>
-          Browse and apply for opportunities available in the WorkForceX marketplace.
-        </p>
-      </div>
-
-      {/* Metrics */}
-      <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--accent-indigo)', marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
-        My Career (Private)
-      </h2>
-      <div className="dashboard-grid">
-        <div className="glass-card">
-          <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontWeight: 500 }}>Readiness Score</div>
-          <div style={{ fontSize: '2rem', fontWeight: 700, margin: '0.5rem 0', color: 'var(--accent-cyan)' }}>{profile.readiness_score}%</div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)' }}>
-            Skills: {skillNamesList.slice(0, 3).join(', ') || 'No badges unlocked'}
-          </div>
-        </div>
-        <div className="glass-card">
-          <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontWeight: 500 }}>
-            {isTraining ? 'Training Track' : 'Active Projects'}
-          </div>
-          <div style={{ fontSize: '1.25rem', fontWeight: 700, margin: '0.8rem 0', color: 'var(--accent-indigo)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {isTraining ? profile.training.track : (activeProjectName === 'None' ? '0 Projects' : '1 Active Project')}
-          </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-            {isTraining ? `Batch: ${profile.training.cohort_code}` : activeProjectName}
-          </div>
-        </div>
-        <div className="glass-card">
-          <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontWeight: 500 }}>Certifications</div>
-          <div style={{ fontSize: '2rem', fontWeight: 700, margin: '0.5rem 0', color: 'var(--accent-purple)' }}>
-            {profile.skills ? profile.skills.length : 0}
-          </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)' }}>AI verified badges</div>
-        </div>
-      </div>
-
-      <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--accent-cyan)', marginBottom: '1rem', marginTop: '2rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
-        AI Recommendations
-      </h2>
-      {/* Three Sections Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '1.5rem', marginBottom: '2rem' }}>
-        
-        {/* Assessment Hub Section */}
-        <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--accent-indigo)' }}>Assessment Hub</h2>
-          <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Prove your skills to unlock verified badges and boost matches.</p>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.5rem' }}>
-            {assessments.map((test) => {
-              const alreadyHasSkill = skillNamesList.includes(test.skill_name);
-              return (
-                <div key={test.id} style={{ padding: '0.75rem 1rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{test.title}</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Skill: {test.skill_name}</div>
-                  </div>
-                  {alreadyHasSkill ? (
-                    <span style={{ fontSize: '0.75rem', color: 'var(--accent-cyan)', fontWeight: 600 }}>✓ Verified</span>
-                  ) : (
-                    <button 
-                      onClick={() => startTest(test.id)}
-                      style={{
-                        background: 'var(--gradient-primary)',
-                        color: '#fff',
-                        border: 'none',
-                        padding: '0.4rem 0.75rem',
-                        fontSize: '0.75rem',
-                        fontWeight: 600,
-                        borderRadius: '4px',
-                        cursor: 'pointer'
-                      }}
-                    >
-                      Verify
-                    </button>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Training Cohort Progress (If Training) VS Recommended Engagements */}
-        {isTraining ? (
-          <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--accent-cyan)' }}>Cohort Progress</h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', marginTop: '0.5rem' }}>
-              <div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '0.5rem' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Curriculum Milestones</span>
-                  <span style={{ fontWeight: 700, color: 'var(--accent-cyan)' }}>{profile.training.progress_percentage}%</span>
-                </div>
-                <div style={{ height: '8px', background: 'var(--bg-primary)', borderRadius: '4px', overflow: 'hidden', border: '1px solid var(--glass-border)' }}>
-                  <div style={{ height: '100%', width: `${profile.training.progress_percentage}%`, background: 'var(--gradient-primary)', borderRadius: '4px' }}></div>
-                </div>
-              </div>
-
-              <div style={{ padding: '0.75rem', background: 'var(--bg-tertiary)', borderRadius: '4px', border: '1px solid var(--border-color)', fontSize: '0.8rem' }}>
-                <div style={{ color: 'var(--text-muted)', textTransform: 'uppercase', fontSize: '0.7rem', fontWeight: 600 }}>Cohort Trainer</div>
-                <div style={{ fontWeight: 600, marginTop: '0.15rem' }}>{profile.training.trainer}</div>
-              </div>
-
-              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                <strong>Next Milestone:</strong> Verify skill competencies in the Assessment Hub to unlock badges and complete curriculum tracks.
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-            <h2 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Recommended Projects</h2>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              {[
-                { company: 'Acme Corp', role: 'Solutions Architect (Cloud)', duration: '6 months', match: '96%' },
-                { company: 'Delta Labs', role: 'Security & Infrastructure Lead', duration: '3 months', match: '90%' }
-              ].map((proj, idx) => (
-                <div key={idx} style={{ padding: '0.75rem 1rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: '0.9rem' }}>{proj.role}</div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{proj.company} • {proj.duration}</div>
-                  </div>
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontWeight: 700, color: 'var(--accent-cyan)' }}>{proj.match}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Skills List */}
-        <div className="glass-card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <h2 style={{ fontSize: '1.25rem', fontWeight: 600 }}>Your Verified Skill Badges</h2>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-            {profile.skills && profile.skills.length > 0 ? (
-              profile.skills.map((skill, idx) => (
-                <div key={idx} style={{ padding: '0.5rem 0.75rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', display: 'align-items', gap: '0.4rem' }}>
-                  <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent-cyan)', display: 'inline-block', marginRight: '0.4rem' }}></div>
-                  <span style={{ fontSize: '0.8rem', fontWeight: 500 }}>{skill.name}</span>
-                </div>
-              ))
-            ) : (
-              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: 'auto' }}>No verified badges yet. Verify assessments on the left to earn badges.</span>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Assessment Test Modal Overlay */}
-      {activeTest && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: 'rgba(7, 10, 19, 0.95)',
-          zIndex: 1000,
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          backdropFilter: 'blur(8px)',
-          padding: '1rem'
-        }}>
-          <div className="glass-card" style={{ width: '100%', maxWidth: '600px', padding: '2rem', display: 'flex', flexDirection: 'column', gap: '1.5rem', boxShadow: 'var(--shadow-lg)' }}>
-            
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '1rem' }}>
-              <div>
-                <h3 style={{ fontSize: '1.25rem', fontWeight: 600, color: 'var(--accent-cyan)' }}>{activeTest.title}</h3>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>Required: Skill validation for {activeTest.skill_name}</span>
-              </div>
-              {!testResult && (
-                <button 
-                  onClick={closeTestModal}
-                  style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1.2rem' }}
-                >
-                  ✕
-                </button>
-              )}
-            </div>
-
-            {!testResult ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                  <span>Question {currentQuestionIdx + 1} of {activeTest.questions.length}</span>
-                  <span>Min. score to pass: 80%</span>
-                </div>
-
-                <div style={{ fontSize: '1.1rem', fontWeight: 500, lineHeight: 1.4, minHeight: '60px' }}>
-                  {activeTest.questions[currentQuestionIdx].q}
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                  {activeTest.questions[currentQuestionIdx].options.map((option, oIdx) => {
-                    const isSelected = selectedAnswers[currentQuestionIdx] === oIdx;
-                    return (
-                      <button
-                        key={oIdx}
-                        onClick={() => selectOption(oIdx)}
-                        style={{
-                          textAlign: 'left',
-                          padding: '1rem',
-                          borderRadius: 'var(--radius-sm)',
-                          border: isSelected ? '1px solid var(--accent-cyan)' : '1px solid var(--border-color)',
-                          background: isSelected ? 'rgba(6, 182, 212, 0.1)' : 'var(--bg-tertiary)',
-                          color: isSelected ? 'var(--text-primary)' : 'var(--text-secondary)',
-                          cursor: 'pointer',
-                          fontFamily: 'var(--font-family)',
-                          fontSize: '0.9rem',
-                          fontWeight: isSelected ? 500 : 400,
-                          transition: 'var(--transition-fast)'
-                        }}
-                      >
-                        {option}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '1rem' }}>
-                  <button
-                    disabled={currentQuestionIdx === 0}
-                    onClick={handlePrevQuestion}
-                    style={{
-                      background: 'transparent',
-                      border: '1px solid var(--glass-border)',
-                      color: 'var(--text-secondary)',
-                      padding: '0.5rem 1rem',
-                      borderRadius: 'var(--radius-sm)',
-                      cursor: currentQuestionIdx === 0 ? 'not-allowed' : 'pointer',
-                      fontSize: '0.85rem'
-                    }}
-                  >
-                    Back
-                  </button>
-
-                  {currentQuestionIdx < activeTest.questions.length - 1 ? (
-                    <button
-                      disabled={selectedAnswers[currentQuestionIdx] === null}
-                      onClick={handleNextQuestion}
-                      style={{
-                        background: 'var(--bg-tertiary)',
-                        border: '1px solid var(--glass-border)',
-                        color: 'var(--text-primary)',
-                        padding: '0.5rem 1rem',
-                        borderRadius: 'var(--radius-sm)',
-                        cursor: selectedAnswers[currentQuestionIdx] === null ? 'not-allowed' : 'pointer',
-                        fontSize: '0.85rem'
-                      }}
-                    >
-                      Next
-                    </button>
-                  ) : (
-                    <button
-                      disabled={selectedAnswers.includes(null) || submittingTest}
-                      onClick={submitTestAnswers}
-                      style={{
-                        background: 'var(--accent-cyan)',
-                        border: 'none',
-                        color: '#000',
-                        fontWeight: 600,
-                        padding: '0.5rem 1.5rem',
-                        borderRadius: 'var(--radius-sm)',
-                        cursor: (selectedAnswers.includes(null) || submittingTest) ? 'not-allowed' : 'pointer',
-                        fontSize: '0.85rem'
-                      }}
-                    >
-                      {submittingTest ? 'Submitting...' : 'Submit Answers'}
-                    </button>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '1.25rem', textAlign: 'center', padding: '1rem 0' }}>
-                <div style={{
-                  width: '64px',
-                  height: '64px',
-                  borderRadius: '50%',
-                  background: testResult.passed ? 'rgba(6, 182, 212, 0.12)' : 'rgba(239, 68, 68, 0.12)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  color: testResult.passed ? 'var(--accent-cyan)' : '#ef4444',
-                  boxShadow: testResult.passed ? '0 0 20px rgba(6, 182, 212, 0.3)' : 'none',
-                  marginBottom: '0.5rem'
-                }}>
-                  {testResult.passed ? (
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="20 6 9 17 4 12"></polyline>
-                    </svg>
-                  ) : (
-                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="18" y1="6" x2="6" y2="18"></line>
-                      <line x1="6" y1="6" x2="18" y2="18"></line>
-                    </svg>
-                  )}
-                </div>
-
-                <h4 style={{ fontSize: '1.5rem', fontWeight: 700 }}>
-                  {testResult.passed ? 'Assessment Passed!' : 'Assessment Failed'}
-                </h4>
-
-                <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', maxWidth: '400px' }}>
-                  {testResult.passed ? 'Excellent work! You have successfully passed the assessment and unlocked your skill badge.' : 'You did not achieve the required 80% passing score. Review the materials and retry.'}
-                </p>
-
-                <div style={{ display: 'flex', gap: '2rem', background: 'var(--bg-tertiary)', padding: '1rem 2rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', margin: '0.5rem 0' }}>
-                  <div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Score</div>
-                    <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--accent-cyan)' }}>{testResult.score}%</div>
-                  </div>
-                  <div style={{ borderRight: '1px solid var(--border-color)' }}></div>
-                  <div>
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Correct</div>
-                    <div style={{ fontSize: '1.25rem', fontWeight: 700 }}>{testResult.correctCount} / {testResult.totalCount}</div>
-                  </div>
-                </div>
-
-                {testResult.passed && (
-                  <div style={{ fontSize: '0.85rem', color: 'var(--accent-cyan)', background: 'rgba(6, 182, 212, 0.06)', border: '1px dashed var(--accent-cyan)', padding: '0.5rem 1rem', borderRadius: '4px' }}>
-                    ✦ Verified Badge Unlocked!
-                  </div>
-                )}
-
-                <button
-                  onClick={closeTestModal}
-                  style={{
-                    background: 'var(--gradient-primary)',
-                    border: 'none',
-                    color: '#fff',
-                    fontWeight: 600,
-                    padding: '0.75rem 2rem',
-                    borderRadius: 'var(--radius-sm)',
-                    cursor: 'pointer',
-                    fontSize: '0.9rem',
-                    marginTop: '1rem',
-                    boxShadow: 'var(--shadow-sm)'
-                  }}
-                >
-                  Close & Update Portal
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
+      {selectedOrgId && (
+        <OrganizationProfileModal organizationId={selectedOrgId} onClose={() => setSelectedOrgId(null)} />
+      )}
+      {selectedOpportunity && (
+        <InvitationModal 
+          opportunity={selectedOpportunity} 
+          onClose={() => setSelectedOpportunity(null)} 
+          onAccept={handleAccept} 
+          onReject={handleReject} 
+        />
       )}
     </div>
   );

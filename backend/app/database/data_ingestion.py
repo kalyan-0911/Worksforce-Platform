@@ -217,7 +217,7 @@ def ingest_employees(db, excel_path: str):
         return
 
     print(f"  [LOAD] Reading employee Excel: {excel_path}")
-    df = pd.read_excel(excel_path)
+    df = pd.read_excel(excel_path, sheet_name='Employee datas')
     df = df.replace({np.nan: None})
 
     employees_bulk = []
@@ -448,6 +448,32 @@ def ingest_job_postings(db, excel_path: str, sample_size: int = 10000):
     if jobs_bulk:
         db.job_postings.insert_many(jobs_bulk, ordered=False)
         print(f"  [OK]   Inserted {len(jobs_bulk)} job postings.")
+        
+    # Extract unique organizations and insert
+    print(f"  [LOAD] Extracting unique organizations...")
+    unique_companies = df['companyName'].dropna().unique()
+    orgs_bulk = []
+    
+    # We fetch existing orgs to avoid duplicates
+    existing_orgs = set(doc['company_name'] for doc in db.organizations.find({}, {"company_name": 1}))
+    
+    for comp in unique_companies:
+        comp_str = str(comp).strip()
+        if not comp_str or comp_str in existing_orgs:
+            continue
+            
+        orgs_bulk.append({
+            "company_name": comp_str,
+            "industry": "Technology", # Default placeholder
+            "location": "India",      # Default placeholder
+            "company_size": "50-200", # Default placeholder
+            "user_id": None,          # Unclaimed organization
+        })
+        existing_orgs.add(comp_str)
+        
+    if orgs_bulk:
+        db.organizations.insert_many(orgs_bulk, ordered=False)
+        print(f"  [OK]   Inserted {len(orgs_bulk)} new organizations.")
 
 
 # ─────────────────────────────────────────────
@@ -551,7 +577,7 @@ def seed_demo_accounts(db):
         })
     # Employer
     if not db.users.find_one({"email": "employer@workforcex.com"}):
-        db.users.insert_one({
+        res = db.users.insert_one({
             "email": "employer@workforcex.com",
             "password_hash": hash_password("workforce123"),
             "role": "Employer",
@@ -559,6 +585,7 @@ def seed_demo_accounts(db):
         })
         db.organizations.insert_one({
             "email": "employer@workforcex.com",
+            "user_id": str(res.inserted_id),
             "company_name": "WorkForceX Corp",
             "industry": "Technology",
             "location": "Bangalore",
@@ -573,12 +600,15 @@ def seed_demo_accounts(db):
             "professional_id": "PROF-DEMO"
         })
         if not db.candidates.find_one({"id": "PROF-DEMO"}):
+            # Fetch a real employee to use as the demo professional
+            real_emp = db.employees.find_one()
+            
             db.candidates.insert_one({
                 "id": "PROF-DEMO",
-                "name": "Demo Professional",
-                "target_role": "Software Engineer",
+                "name": real_emp.get("name", "Demo Professional") if real_emp else "Demo Professional",
+                "target_role": real_emp.get("title", "Software Engineer") if real_emp else "Software Engineer",
                 "status": "Bench",
-                "readiness_score": 85,
+                "readiness_score": int(real_emp.get("current_rating", 3.4) * 20) if real_emp else 85,
                 "skills": [{"name": "React", "verified": True}],
                 "training": {
                     "cohort_code": "COHORT-2026-REACT",
@@ -641,8 +671,8 @@ def run_ingestion():
     backend_dir = os.path.dirname(os.path.dirname(here))      # backend
     project_dir = os.path.dirname(backend_dir)                # workforce (project root)
     data_dir   = os.path.join(project_dir, "Data")
-    emp_excel  = os.path.join(data_dir, "cleaned Employee datas.xlsx")
-    jobs_excel = os.path.join(data_dir, "indian-job-market-dataset-2025.xlsx")
+    emp_excel  = os.path.join(data_dir, "workforcex dashboard data with raw and cleaned file.xlsx")
+    jobs_excel = os.path.join(data_dir, "employer data.xlsx")
 
     print("\n==============================================")
     print("   WorkForceX -- Data Ingestion Pipeline")
@@ -668,14 +698,14 @@ def run_ingestion():
     print("\n[4/4] Seeding Demo Accounts...")
     seed_demo_accounts(db)
 
-    print("\n══════════════════════════════════════════════")
+    print("\n==============================================")
     print("   Ingestion Complete!")
     print(f"   employees:    {db.employees.count_documents({})}")
     print(f"   candidates:   {db.candidates.count_documents({})}")
     print(f"   users:        {db.users.count_documents({})}")
     print(f"   job_postings: {db.job_postings.count_documents({})}")
     print(f"   assessments:  {db.assessments.count_documents({})}")
-    print("══════════════════════════════════════════════\n")
+    print("==============================================\n")
 
 
 if __name__ == "__main__":

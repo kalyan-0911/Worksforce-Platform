@@ -79,9 +79,15 @@ class CandidateService:
                 "mock_project_score": 0,
             },
             "onboarded": True,
+            "experience_years": parsed.get("total_experience_years"),
+            "education": parsed.get("education"),
+            "summary": parsed.get("summary"),
+            "key_strengths": parsed.get("key_strengths", []),
+            "areas_to_improve": parsed.get("areas_to_improve", [])
         }
         if parsed.get("current_title"):
             update_fields["title"] = parsed["current_title"]
+            update_fields["role"] = parsed["current_title"]
 
         CandidateRepository.update(prof_id, update_fields)
         candidate = CandidateRepository.get_by_id(prof_id)

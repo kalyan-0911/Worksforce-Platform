@@ -2,9 +2,10 @@ from app.database import get_db
 
 class RequisitionRepository:
     @staticmethod
-    def get_all():
+    def get_all(query=None):
         db = get_db()
-        return list(db.requisitions.find({}, {"_id": 0}))
+        q = query or {}
+        return list(db.requisitions.find(q, {"_id": 0}))
 
     @staticmethod
     def get_by_id(req_id):

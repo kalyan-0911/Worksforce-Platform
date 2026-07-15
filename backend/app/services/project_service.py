@@ -1,31 +1,50 @@
 from app.repositories import ProjectRepository, CandidateRepository
+from app.database import get_db
+import uuid
 
 class ProjectService:
     @staticmethod
-    def deploy_squad(name, member_ids, employer_id):
+    def deploy_squad(name, description, member_ids, organization_id):
         if not name or not member_ids:
             raise ValueError("Project name and memberIds are required.")
 
-        proj_id = f"PROJ-{ProjectRepository.count({}) + 1:03d}"
+        db = get_db()
+        proj_id = f"PROJ-{uuid.uuid4().hex[:8].upper()}"
         
         member_profiles = []
         for m_id in member_ids:
             c = CandidateRepository.get_by_id(m_id)
-            if c:
-                member_profiles.append({
-                    "id": c["id"],
-                    "name": c["name"],
-                    "role": c["target_role"]
-                })
-                # Set status to engaged
-                CandidateRepository.update(m_id, {"status": "Engaged"})
+            if not c:
+                raise ValueError(f"Candidate {m_id} not found.")
+                
+            member_profiles.append({
+                "id": c["id"],
+                "name": c["name"],
+                "role": c.get('target_role', c.get('role', c.get('title', 'Unknown'))),
+                "status": "Pending_Invitation"
+            })
+            
+            # Send an invitation (opportunity) to this candidate
+            opp_id = f"REQ-{uuid.uuid4().hex[:8].upper()}"
+            db.opportunities.insert_one({
+                "id": opp_id,
+                "employer_id": organization_id,
+                "employer_name": db.organizations.find_one({"user_id": organization_id}, {"company_name": 1}).get("company_name", "Unknown"),
+                "candidate_id": c["id"],
+                "project_name": name,
+                "project_description": description,
+                "project_id": proj_id,
+                "role": c.get('target_role', c.get('role', c.get('title', 'Role'))),
+                "status": "Pending"
+            })
 
         new_project = {
             "id": proj_id,
             "name": name,
+            "description": description,
             "size": len(member_ids),
-            "status": "Active",
-            "employer_id": employer_id,
+            "status": "Planning",
+            "organization_id": organization_id,
             "members": member_profiles
         }
         ProjectRepository.create(new_project)

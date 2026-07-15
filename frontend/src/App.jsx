@@ -1,18 +1,22 @@
 import { useState, useEffect } from 'react';
-import Navbar from './components/Navbar';
-import Sidebar from './components/Sidebar';
+import Navbar from './components/layout/Navbar';
+import Sidebar from './components/layout/Sidebar';
 import EmployerDashboard from './pages/EmployerDashboard';
 import ProfessionalDashboard from './pages/ProfessionalDashboard';
+import JobMarket from './pages/JobMarket';
 import WorkforceInventory from './pages/WorkforceInventory';
-import TeamBuilder from './pages/TeamBuilder';
-import WorkforceAnalytics from './pages/WorkforceAnalytics';
 import LoginGateway from './pages/LoginGateway';
 import AdminDashboard from './pages/AdminDashboard';
+import ProfilePage from './pages/ProfilePage';
+import { Toaster } from 'react-hot-toast';
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('workforcex_token'));
-  const [user, setUser] = useState(JSON.parse(localStorage.getItem('workforcex_user')));
-  const [activeTab, setActiveTab] = useState('employer');
+  const [user, setUser] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('workforcex_user')); }
+    catch { return null; }
+  });
+  const [activeTab, setActiveTab] = useState('');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   useEffect(() => {
@@ -37,24 +41,35 @@ function App() {
     setUser(null);
   };
 
+  const refreshUserData = async () => {
+    try {
+      const updatedUser = await fetch('http://localhost:5000/api/auth/me', {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('workforcex_token')}` }
+      }).then(r => r.json());
+      if (updatedUser && !updatedUser.error) {
+        localStorage.setItem('workforcex_user', JSON.stringify(updatedUser));
+        setUser(updatedUser);
+      }
+    } catch(e) { console.error(e); }
+  };
+
   const renderContent = () => {
-    switch (activeTab) {
-      case 'admin':
-        return <AdminDashboard />;
-      case 'employer':
-        return <EmployerDashboard />;
-      case 'professional':
-        return <ProfessionalDashboard />;
-      case 'inventory':
-        return <WorkforceInventory />;
-      case 'teambuilder':
-        return <TeamBuilder />;
-      case 'analytics':
-        return <WorkforceAnalytics />;
-      default:
-        if (user?.role === 'Admin') return <AdminDashboard />;
-        return user?.role === 'Employer' ? <EmployerDashboard /> : <ProfessionalDashboard />;
+    if (activeTab === 'profile') {
+      return <ProfilePage user={user} onProfileUpdate={refreshUserData} />;
     }
+
+    // Admin routes
+    if (user?.role === 'Admin') {
+      if (activeTab === 'inventory') return <WorkforceInventory />;
+      return <AdminDashboard />;
+    }
+    // Employer routes
+    if (user?.role === 'Employer') {
+      return <EmployerDashboard activeTab={activeTab} setActiveTab={setActiveTab} />;
+    }
+    // Professional routes
+    if (activeTab === 'marketplace') return <JobMarket />;
+    return <ProfessionalDashboard activeTab={activeTab} setActiveTab={setActiveTab} />;
   };
 
   if (!token || !user) {
@@ -63,25 +78,22 @@ function App() {
 
   return (
     <div className="app-container">
-      {/* Ambient background glow elements */}
-      <div className="ambient-glow ambient-glow-1"></div>
-      <div className="ambient-glow ambient-glow-2"></div>
-
-      {/* Navigation Sidebar */}
-      <Sidebar 
-        activeTab={activeTab} 
-        setActiveTab={setActiveTab} 
-        sidebarCollapsed={sidebarCollapsed} 
+      <Toaster position="top-right" toastOptions={{ style: { background: 'var(--bg-tertiary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)' } }} />
+      <div className="ambient-glow ambient-glow-1" />
+      <div className="ambient-glow ambient-glow-2" />
+      <Sidebar
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        sidebarCollapsed={sidebarCollapsed}
         userRole={user.role}
       />
-
-      {/* Main Layout Area */}
       <div className={`main-content ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
-        <Navbar 
-          sidebarCollapsed={sidebarCollapsed} 
-          setSidebarCollapsed={setSidebarCollapsed} 
+        <Navbar
+          sidebarCollapsed={sidebarCollapsed}
+          setSidebarCollapsed={setSidebarCollapsed}
           user={user}
           onLogout={handleLogout}
+          setActiveTab={setActiveTab}
         />
         {renderContent()}
       </div>

@@ -91,7 +91,7 @@
 
 .menu-link:hover {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(0, 0, 0, 0.04);
 }
 
 .menu-link.active {

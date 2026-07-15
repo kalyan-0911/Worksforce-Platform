@@ -17,22 +17,36 @@ def manage_requisitions(current_user):
             role = data.get('role')
             project_name = data.get('projectName')
             skills = data.get('skills', [])
+            experience = data.get('experience')
+            project_description = data.get('projectDescription')
+            duration = data.get('duration')
+            team_size = data.get('teamSize')
 
             if not role or not project_name:
                 return jsonify({'error': 'Role and Project Name are required.'}), 400
 
-            req_id = f"REQ-{RequisitionRepository.count({}) + 101}"
+            import uuid
+            req_id = f"REQ-{uuid.uuid4().hex[:8].upper()}"
             new_req = {
                 "id": req_id,
                 "role": role,
                 "project_name": project_name,
-                "status": "Draft",
-                "required_skills": skills
+                "status": "Open",
+                "required_skills": skills,
+                "organization_id": current_user['id'],
+                "experience": experience,
+                "project_description": project_description,
+                "duration": duration,
+                "team_size": team_size
             }
             RequisitionRepository.create(new_req)
+            if "_id" in new_req:
+                del new_req["_id"]
             return jsonify(new_req), 201
         else: # GET
-            reqs = RequisitionRepository.get_all()
+            if current_user.get('role') != 'Employer':
+                return jsonify({'error': 'Access forbidden.'}), 403
+            reqs = RequisitionRepository.get_all({"organization_id": current_user['id']})
             return jsonify(reqs)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -46,5 +60,45 @@ def get_matches(current_user, id):
         return jsonify(matches)
     except ValueError as e:
         return jsonify({'error': str(e)}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@requisitions_bp.route('/requisitions/<id>', methods=['DELETE'])
+@token_required
+@role_required('Employer')
+def delete_requisition(current_user, id):
+    try:
+        from app.database import get_db
+        db = get_db()
+        
+        # 1. Fetch requirement to get project_name
+        req = db.requisitions.find_one({'id': id, 'organization_id': current_user['id']})
+        if not req:
+            return jsonify({'error': 'Requisition not found or unauthorized.'}), 404
+            
+        project_name = req.get('project_name')
+        
+        # 2. Delete the requirement
+        db.requisitions.delete_one({'id': id})
+        
+        if project_name:
+            # 3. Delete associated project if it exists (assuming 1:1 mapping by project_name for MVP)
+            db.projects.delete_many({'name': project_name, 'organization_id': current_user['id']})
+            
+            # 4. Find associated opportunities and Candidates
+            opps = list(db.opportunities.find({'project_name': project_name, 'employer_id': current_user['id']}))
+            candidate_ids = list(set([opp.get('candidate_id') for opp in opps if opp.get('candidate_id')]))
+            
+            # 5. Delete Opportunities
+            db.opportunities.delete_many({'project_name': project_name, 'employer_id': current_user['id']})
+            
+            # 6. Revert Candidates status
+            for cid in candidate_ids:
+                remaining_accepted = db.opportunities.find_one({'candidate_id': cid, 'status': 'Accepted'})
+                if not remaining_accepted:
+                    db.candidates.update_one({'id': cid}, {'$set': {'status': 'Bench'}})
+                    db.professionals.update_one({'id': cid}, {'$set': {'status': 'Bench'}})
+            
+        return jsonify({'message': 'Requirement and associated records deleted successfully.'}), 200
     except Exception as e:
         return jsonify({'error': str(e)}), 500

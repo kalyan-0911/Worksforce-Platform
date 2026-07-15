@@ -27,12 +27,23 @@ def init_db():
     db = get_db()
     
     # Establish performance text and lookup index structures
-    db.users.create_index("email", unique=True)
-    db.candidates.create_index([("name", TEXT), ("target_role", TEXT)])
-    db.assessments.create_index("id", unique=True)
-    db.projects.create_index("id", unique=True)
-    db.requisitions.create_index("id", unique=True)
-    print("MongoDB indexes created successfully.")
+    try:
+        db.users.create_index("email", unique=True)
+        db.candidates.create_index("id", unique=True)
+        db.candidates.create_index("status")
+        try:
+            db.candidates.create_index([("name", TEXT), ("role", TEXT)])
+        except Exception as e:
+            pass # Ignore if index with different name exists
+        db.assessments.create_index("id", unique=True)
+        db.projects.create_index("id", unique=True)
+        db.projects.create_index("organization_id")
+        db.requisitions.create_index("id", unique=True)
+        db.requisitions.create_index("organization_id")
+        db.organizations.create_index("user_id", unique=True)
+        print("MongoDB indexes created successfully.")
+    except Exception as e:
+        print(f"[WARN] Startup database pipeline skipped: {e}")
 
 def _fallback_seeds(db):
     print("Running database seeder fallback mocks...")

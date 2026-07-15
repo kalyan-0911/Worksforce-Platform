@@ -1,5 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { api } from '../services/api';
+import toast from 'react-hot-toast';
+import CandidateProfileModal from '../components/modals/CandidateProfileModal';
 
 export default function TeamBuilder() {
   const [projectTitle, setProjectTitle] = useState('');
@@ -10,6 +12,9 @@ export default function TeamBuilder() {
   const [unassignedSlots, setUnassignedSlots] = useState([]);
   const [averageScore, setAverageScore] = useState(0);
   const [assembling, setAssembling] = useState(false);
+  
+  const [selectedCandidateId, setSelectedCandidateId] = useState(null);
+  const [selectedMatchInfo, setSelectedMatchInfo] = useState(null);
 
   const addRoleSlot = () => {
     if (!roleInput) return;
@@ -23,11 +28,11 @@ export default function TeamBuilder() {
   const handleAssemble = async (e) => {
     e.preventDefault();
     if (!projectTitle) {
-      alert('Please enter a project title');
+      toast.error('Please enter a project title');
       return;
     }
     if (roleSlots.length === 0) {
-      alert('Please add at least one role requirement slot.');
+      toast.error('Please add at least one role requirement slot.');
       return;
     }
 
@@ -41,7 +46,7 @@ export default function TeamBuilder() {
       setUnassignedSlots(data.unassigned_slots || []);
       setAverageScore(data.average_match_score || 0);
     } catch (err) {
-      alert(`Assembly scanning failed: ${err.message}`);
+      toast.error(`Assembly scanning failed: ${err.message}`);
     } finally {
       setAssembling(false);
     }
@@ -51,19 +56,23 @@ export default function TeamBuilder() {
     if (!recommendedSquad || recommendedSquad.length === 0) return;
 
     try {
-      await api.deployTeam({
-        name: projectTitle,
-        memberIds: recommendedSquad.map(item => item.professional.id)
-      });
+      // Loop through squad and send opportunity invites instead of instantly deploying
+      for (const item of recommendedSquad) {
+        await api.createOpportunity({
+          candidateId: item.professional.id,
+          projectName: projectTitle,
+          role: item.role_slot
+        });
+      }
 
-      alert(`Success!\nAI Recommended squad successfully deployed to project: "${projectTitle}".\nAll allocated members status flagged as ENGAGED.`);
+      toast.success(`Success!\nInvitations successfully sent to AI Recommended squad for project: "${projectTitle}".\nCandidates will review your offers in their portal.`);
       
       setProjectTitle('');
       setRecommendedSquad(null);
       setUnassignedSlots([]);
       setAverageScore(0);
     } catch (err) {
-      alert(`Deployment failed: ${err.message}`);
+      toast.error(`Failed to send invitations: ${err.message}`);
     }
   };
 
@@ -93,7 +102,7 @@ export default function TeamBuilder() {
                 style={{
                   background: 'var(--bg-primary)',
                   border: '1px solid var(--glass-border)',
-                  color: '#fff',
+                  color: 'var(--text-primary)',
                   padding: '0.75rem 1rem',
                   borderRadius: 'var(--radius-sm)',
                   outline: 'none',
@@ -114,7 +123,7 @@ export default function TeamBuilder() {
                     flex: 1,
                     background: 'var(--bg-primary)',
                     border: '1px solid var(--glass-border)',
-                    color: '#fff',
+                    color: 'var(--text-primary)',
                     padding: '0.75rem 1rem',
                     borderRadius: 'var(--radius-sm)',
                     outline: 'none',
@@ -136,7 +145,7 @@ export default function TeamBuilder() {
                   style={{
                     background: 'var(--bg-tertiary)',
                     border: '1px solid var(--glass-border)',
-                    color: '#fff',
+                    color: 'var(--text-primary)',
                     padding: '0.75rem 1.25rem',
                     borderRadius: 'var(--radius-sm)',
                     fontWeight: 600,
@@ -149,7 +158,7 @@ export default function TeamBuilder() {
               </div>
 
               {/* Display compiled slots */}
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem', minHeight: '38px', padding: '0.5rem', background: 'rgba(255,255,255,0.02)', borderRadius: '4px', border: '1px dashed var(--border-color)' }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.5rem', minHeight: '38px', padding: '0.5rem', background: 'rgba(0,0,0,0.02)', borderRadius: '4px', border: '1px dashed var(--border-color)' }}>
                 {roleSlots.length === 0 ? (
                   <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', margin: 'auto' }}>No slots configured yet. Add role slots above.</span>
                 ) : (
@@ -175,7 +184,7 @@ export default function TeamBuilder() {
               style={{
                 background: assembling ? 'var(--bg-tertiary)' : 'var(--gradient-primary)',
                 border: 'none',
-                color: '#fff',
+                color: 'var(--text-primary)',
                 padding: '0.9rem',
                 borderRadius: 'var(--radius-sm)',
                 fontWeight: 600,
@@ -201,7 +210,7 @@ export default function TeamBuilder() {
               <div style={{
                 width: '36px',
                 height: '36px',
-                border: '3px solid rgba(255,255,255,0.05)',
+                border: '3px solid rgba(0,0,0,0.05)',
                 borderTopColor: 'var(--accent-cyan)',
                 borderRadius: '50%',
                 animation: 'spin 1s linear infinite'
@@ -240,7 +249,23 @@ export default function TeamBuilder() {
                   <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--text-secondary)' }}>No available profiles aligned.</div>
                 ) : (
                   recommendedSquad.map((item, idx) => (
-                    <div key={idx} style={{ padding: '1rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div 
+                      key={idx} 
+                      onClick={() => {
+                        setSelectedCandidateId(item.professional.id);
+                        setSelectedMatchInfo({
+                          score: item.match_score,
+                          explanation: item.explanation
+                        });
+                      }}
+                      style={{ 
+                        padding: '1rem', background: 'var(--bg-tertiary)', borderRadius: 'var(--radius-sm)', 
+                        border: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', 
+                        alignItems: 'center', cursor: 'pointer', transition: 'var(--transition-fast)' 
+                      }}
+                      onMouseOver={(e) => e.currentTarget.style.borderColor = 'var(--accent-cyan)'}
+                      onMouseOut={(e) => e.currentTarget.style.borderColor = 'var(--border-color)'}
+                    >
                       <div>
                         <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{item.role_slot} Slot</span>
                         <div style={{ fontWeight: 600, fontSize: '0.95rem', marginTop: '0.15rem' }}>{item.professional.name}</div>
@@ -248,7 +273,7 @@ export default function TeamBuilder() {
                       </div>
                       <div style={{ textAlign: 'right' }}>
                         <div style={{ fontWeight: 700, color: 'var(--accent-cyan)', fontSize: '1.05rem' }}>{item.match_score}% Fit</div>
-                        <div style={{ fontSize: '0.65rem', background: 'rgba(6, 182, 212, 0.1)', color: 'var(--accent-cyan)', display: 'inline-block', padding: '0.15rem 0.4rem', borderRadius: '3px', marginTop: '0.25rem', fontWeight: 600 }}>BENCH ALLOCATION</div>
+                        <div style={{ fontSize: '0.65rem', background: 'rgba(6, 182, 212, 0.1)', color: 'var(--accent-cyan)', display: 'inline-block', padding: '0.15rem 0.4rem', borderRadius: '3px', marginTop: '0.25rem', fontWeight: 600 }}>VIEW PROFILE</div>
                       </div>
                     </div>
                   ))
@@ -274,13 +299,24 @@ export default function TeamBuilder() {
                   onMouseOver={(e) => e.currentTarget.style.background = 'rgba(6,182,212,0.08)'}
                   onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
                 >
-                  Deploy AI Assembled Team
+                  Send Invitations to AI Squad
                 </button>
               )}
             </div>
           )}
         </div>
       </div>
+      
+      {selectedCandidateId && (
+        <CandidateProfileModal 
+          candidateId={selectedCandidateId}
+          matchInfo={selectedMatchInfo}
+          onClose={() => {
+            setSelectedCandidateId(null);
+            setSelectedMatchInfo(null);
+          }}
+        />
+      )}
     </div>
   );
 }

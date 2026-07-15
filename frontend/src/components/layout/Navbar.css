@@ -4,7 +4,7 @@
   top: 0;
   right: 0;
   left: var(--sidebar-width);
-  background: rgba(15, 19, 34, 0.6);
+  background: var(--glass-bg);
   backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--glass-border);
   display: flex;

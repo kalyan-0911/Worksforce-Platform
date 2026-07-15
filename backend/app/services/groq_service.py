@@ -32,16 +32,33 @@ def _get_client():
     return _groq_client
 
 
-def _chat(messages: list, model: str = "llama-3.1-8b-instant", temperature: float = 0.3) -> str:
+def _chat(messages: list, model: str = "llama3-8b-8192", temperature: float = 0.3) -> str:
     """Send a chat completion request to Groq and return the response text."""
+    import time
+    import re
     client = _get_client()
-    response = client.chat.completions.create(
-        model=model,
-        messages=messages,
-        temperature=temperature,
-        max_tokens=1024,
-    )
-    return response.choices[0].message.content.strip()
+    max_retries = 4
+    for attempt in range(max_retries):
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=1024,
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            err_str = str(e)
+            if "429" in err_str:
+                if attempt == max_retries - 1:
+                    raise
+                # Try to extract exact wait time from Groq error message
+                match = re.search(r"Please try again in (\d+\.?\d*)s", err_str)
+                wait_time = float(match.group(1)) + 0.5 if match else (2 ** attempt)
+                print(f"[GROQ Rate Limit] Waiting {wait_time}s before retry {attempt + 1}/{max_retries}...")
+                time.sleep(wait_time)
+            else:
+                raise
 
 
 def _extract_json(text: str) -> dict | list:
@@ -104,7 +121,7 @@ def parse_resume(resume_text: str) -> dict:
                 {"role": "system", "content": GROQ_RESUME_SYSTEM},
                 {"role": "user", "content": f"Parse this resume:\n\n{resume_text[:4000]}"},
             ],
-            model="llama-3.1-8b-instant",
+            model="llama3-8b-8192",
             temperature=0.1,
         )
         parsed = _extract_json(response)
@@ -175,23 +192,24 @@ def explain_match(candidate: dict, job: dict, match_score: int) -> str:
     missing          = [s for s in job_skills if s not in candidate_skills]
 
     prompt = (
-        f"Candidate: {candidate.get('name')}, {candidate.get('title')}, "
-        f"readiness {candidate.get('readiness_score')}%.\n"
-        f"Job: {job.get('title')} at {job.get('company')} in {job.get('location')}.\n"
+        f"Candidate: {candidate.get('name')}, Role: {candidate.get('title')}, "
+        f"Experience: {candidate.get('experience_years')} years, "
+        f"Readiness: {candidate.get('readiness_score')}%.\n"
+        f"Job: {job.get('title')} at {job.get('company')}. Required Experience: {job.get('experience', 'Not specified')}.\n"
         f"Match score: {match_score}%.\n"
         f"Matching skills: {', '.join(overlap[:6]) or 'none'}.\n"
         f"Missing skills: {', '.join(missing[:4]) or 'none'}.\n"
-        f"Write a 2-sentence explanation for the candidate about this match. "
-        f"Be specific, encouraging, and actionable. No bullet points."
+        f"Write a 2-sentence explanation advising the employer why this candidate is a match (or not) for their requisition. "
+        f"Be specific, objective, and professional. Refer to the candidate in the third person (e.g. 'This candidate...'). No bullet points."
     )
 
     try:
         return _chat(
             messages=[
-                {"role": "system", "content": "You are a helpful career advisor on a talent platform."},
+                {"role": "system", "content": "You are an expert AI recruiting assistant on a talent marketplace, advising employers on candidate fit."},
                 {"role": "user", "content": prompt},
             ],
-            model="llama-3.1-8b-instant",
+            model="llama3-8b-8192",
             temperature=0.4,
         )
     except Exception as e:
@@ -321,7 +339,7 @@ def analyze_skill_demand(top_skills: list[dict]) -> str:
                 {"role": "system", "content": "You are a data-driven talent market analyst focused on the Indian tech industry."},
                 {"role": "user", "content": prompt},
             ],
-            model="llama-3.1-8b-instant",
+            model="llama3-8b-8192",
             temperature=0.3,
         )
     except Exception as e:

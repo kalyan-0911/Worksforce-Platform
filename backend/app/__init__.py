@@ -13,6 +13,7 @@ from app.api import (
 from app.api.jobs import jobs_bp
 from app.api.admin import admin_bp
 from app.api.organizations import organizations_bp
+from app.api.opportunities import opportunities_bp
 
 
 def create_app():
@@ -29,6 +30,7 @@ def create_app():
     app.register_blueprint(jobs_bp,         url_prefix='/api')
     app.register_blueprint(admin_bp,        url_prefix='/api')
     app.register_blueprint(organizations_bp,url_prefix='/api')
+    app.register_blueprint(opportunities_bp,url_prefix='/api')
 
     # Initialize indexes and run data ingestion pipeline on first boot
     try:

@@ -2,10 +2,15 @@ from app.database import get_db
 
 class CandidateRepository:
     @staticmethod
-    def get_all(query=None):
+    def get_all(query=None, limit=0, skip=0):
         db = get_db()
         q = query or {}
-        return list(db.candidates.find(q, {"_id": 0}))
+        cursor = db.candidates.find(q, {"_id": 0})
+        if skip > 0:
+            cursor = cursor.skip(skip)
+        if limit > 0:
+            cursor = cursor.limit(limit)
+        return list(cursor)
 
     @staticmethod
     def get_by_id(prof_id):

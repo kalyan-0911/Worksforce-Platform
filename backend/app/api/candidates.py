@@ -17,30 +17,56 @@ def get_professionals(current_user):
         skill_filter = request.args.get('skill', '').strip()
         status_filter = request.args.get('status', '').strip()
 
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 50))
+        skip = (page - 1) * limit
+
         query = {}
         if search_query:
             query["name"] = {"$regex": search_query, "$options": "i"}
         if role_filter:
-            query["title"] = {"$regex": role_filter, "$options": "i"}
+            query["role"] = {"$regex": role_filter, "$options": "i"}
         if skill_filter:
             query["skills.name"] = {"$regex": skill_filter, "$options": "i"}
         if status_filter:
             query["status"] = status_filter
 
-        candidates = CandidateRepository.get_all(query)
+        candidates = CandidateRepository.get_all(query, limit=limit, skip=skip)
         return jsonify(candidates)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
-@candidates_bp.route('/professionals/<id>', methods=['GET'])
+@candidates_bp.route('/professionals/<id>', methods=['GET', 'PATCH'])
 @token_required
 def get_professional_by_id(current_user, id):
     try:
+        if request.method == 'PATCH':
+            if current_user.get('role') == 'Professional' and current_user.get('professionalId') != id:
+                return jsonify({'error': 'Unauthorized profile modification.'}), 403
+            data = request.json or {}
+            CandidateRepository.update(id, data)
+            updated = CandidateRepository.get_by_id(id)
+            return jsonify(updated)
+            
         candidate = CandidateRepository.get_by_id(id)
         if not candidate:
             return jsonify({'error': 'Professional not found.'}), 404
         return jsonify(candidate)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@candidates_bp.route('/candidates/reverse-matches', methods=['GET'])
+@token_required
+def get_reverse_matches(current_user):
+    if current_user.get('role') != 'Professional':
+        return jsonify({'error': 'Access forbidden.'}), 403
+    
+    prof_id = current_user.get('professionalId')
+    try:
+        from app.services.ai_service import AIService
+        matches = AIService.get_reverse_matches(prof_id, top_n=5)
+        return jsonify(matches)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -87,6 +113,49 @@ def parse_resume(current_user):
         return jsonify(result)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+import io
+from PyPDF2 import PdfReader
+import docx
+
+@candidates_bp.route('/candidates/upload-resume', methods=['POST'])
+@token_required
+def upload_resume(current_user):
+    if current_user.get('role') != 'Professional':
+        return jsonify({'error': 'Access forbidden.'}), 403
+
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file uploaded.'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file.'}), 400
+
+    resume_text = ""
+    try:
+        filename = file.filename.lower()
+        if filename.endswith('.pdf'):
+            reader = PdfReader(file)
+            for page in reader.pages:
+                extracted = page.extract_text()
+                if extracted:
+                    resume_text += extracted + "\n"
+        elif filename.endswith('.docx'):
+            doc = docx.Document(file)
+            for para in doc.paragraphs:
+                resume_text += para.text + "\n"
+        else:
+            # Fallback to plain text read
+            resume_text = file.read().decode('utf-8', errors='ignore')
+            
+        if len(resume_text.strip()) < 10:
+            return jsonify({'error': 'Could not extract text from file or file is too short.'}), 400
+            
+        prof_id = current_user.get('professionalId')
+        result = CandidateService.process_resume(resume_text, prof_id)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'error': f'Failed to process file: {str(e)}'}), 500
 
 
 # ── Job Recommendations (Skill-Based Matching) ─────────────────

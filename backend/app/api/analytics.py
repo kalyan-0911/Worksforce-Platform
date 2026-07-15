@@ -13,15 +13,15 @@ def get_analytics(current_user):
         # Marketplace stats
         total_talent = db.candidates.count_documents({"user_id": None})
         bench_count = db.candidates.count_documents({"user_id": None, "status": "Bench"})
-        jobs_count = db.job_postings.count_documents({"employer_id": None})
+        jobs_count = db.job_postings.count_documents({"organization_id": None})
         org_count = db.organizations.count_documents({"user_id": None})
         
         util_rate = round(((total_talent - bench_count) / total_talent) * 100, 1) if total_talent else 0.0
 
         # Workspace stats
         user_id = current_user['id']
-        my_active_proj = db.projects.count_documents({"employer_id": user_id, "status": "Active"})
-        my_open_reqs = db.requisitions.count_documents({"employer_id": user_id, "status": {"$ne": "Completed"}})
+        my_active_proj = db.projects.count_documents({"organization_id": user_id, "status": "Active"})
+        my_open_reqs = db.requisitions.count_documents({"organization_id": user_id, "status": {"$ne": "Completed"}})
         
         return jsonify({
             "marketplace": {
