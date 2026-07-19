@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 from app.database.mongodb import get_db
 from app.middleware import token_required, role_required
 import uuid
+import datetime
 
 opportunities_bp = Blueprint('opportunities', __name__)
 
@@ -19,14 +20,18 @@ def create_opportunity(current_user):
         return jsonify({'error': 'Candidate ID and Project Name are required.'}), 400
         
     opp_id = f"OPP-{uuid.uuid4().hex[:8].upper()}"
+    org_id = current_user.get('profileId')
+    org = db.organizations.find_one({"id": org_id})
+    company_name = org.get("company_name", "Employer") if org else "Employer"
     new_opp = {
         "id": opp_id,
-        "employer_id": current_user['id'],
-        "employer_name": current_user.get('name', 'Employer'),
+        "employer_id": org_id,
+        "employer_name": company_name,
         "candidate_id": candidate_id,
         "project_name": project_name,
         "role": role,
-        "status": "Pending"
+        "status": "Pending",
+        "created_at": datetime.datetime.utcnow()
     }
     
     db.opportunities.insert_one(new_opp)
@@ -149,7 +154,8 @@ def request_opportunity(current_user):
         "project_name": job.get('title', 'Project'),
         "role": job.get('role', job.get('title', 'Role')),
         "job_id": str(job.get('_id', job_id)),
-        "status": "Candidate_Requested"
+        "status": "Candidate_Requested",
+        "created_at": datetime.datetime.utcnow()
     }
     
     db.opportunities.insert_one(new_req)
@@ -165,7 +171,7 @@ def get_employer_opportunities(current_user):
     Includes: invitations sent (Pending), accepted, rejected, and candidate-requested.
     """
     db = get_db()
-    employer_id = current_user['id']
+    employer_id = current_user.get('profileId')
 
     opps = list(db.opportunities.find(
         {"employer_id": employer_id},
@@ -189,7 +195,7 @@ def get_employer_opportunities(current_user):
 def approve_candidate_request(current_user, id):
     """Employer approves a candidate-requested opportunity."""
     db = get_db()
-    employer_id = current_user['id']
+    employer_id = current_user.get('profileId')
 
     opp = db.opportunities.find_one({"id": id, "employer_id": employer_id})
     if not opp:

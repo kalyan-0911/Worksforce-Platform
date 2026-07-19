@@ -17,6 +17,8 @@ def token_required(f):
         
         try:
             data = jwt.decode(token, Config.JWT_SECRET, algorithms=[Config.JWT_ALGORITHM])
+            if data.get('type') == 'refresh':
+                return jsonify({'error': 'Refresh token cannot be used for resource access.'}), 401
             current_user = data
         except Exception as e:
             return jsonify({'error': 'Token is invalid or expired.'}), 401

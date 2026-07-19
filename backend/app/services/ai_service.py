@@ -33,22 +33,34 @@ class AIService:
             base_score = ml_scores[i] * 100
             readiness_score = c.get('readiness_score', 80)
             
-            # Combine ML score and Readiness score
-            final_score = min(100, round((base_score * 0.7) + (readiness_score * 0.3)))
+            # Compute availability status score (Bench: 100, Training: 50, Engaged: 0)
+            status = c.get('status', 'Bench')
+            status_score = 100 if status == 'Bench' else (50 if status == 'Training' else 0)
+            
+            # Compute experience level score (Compare requisition expected experience with candidate experience)
+            req_exp = str(req.get('experience', 'Mid')).lower()
+            cand_exp = c.get('experience_years', 3)
+            if 'junior' in req_exp:
+                exp_score = 100 if cand_exp < 2 else (80 if cand_exp <= 5 else 60)
+            elif 'senior' in req_exp:
+                exp_score = 100 if cand_exp > 5 else (70 if cand_exp >= 2 else 30)
+            else: # Mid / default
+                exp_score = 100 if 2 <= cand_exp <= 5 else (90 if cand_exp > 5 else 50)
+                
+            # Calculate final match score with 70/20/5/5 weights
+            final_score = min(100, round((base_score * 0.70) + (readiness_score * 0.20) + (status_score * 0.05) + (exp_score * 0.05)))
             
             cand_skills_list = [s['name'] for s in c.get('skills', [])]
             candidate_set = {s.lower() for s in cand_skills_list}
             overlapping = [s for s in required_skills if s.lower() in candidate_set]
             missing = [s for s in required_skills if s.lower() not in candidate_set]
 
-            # Only include candidates meeting a minimum threshold (e.g. 30%)
-            if final_score >= 30:
-                scored_candidates.append({
-                    'candidate': c,
-                    'score': final_score,
-                    'overlappingSkills': overlapping,
-                    'missingSkills': missing
-                })
+            scored_candidates.append({
+                'candidate': c,
+                'score': final_score,
+                'overlappingSkills': overlapping,
+                'missingSkills': missing
+            })
 
         # Sort descending by local compatibility score
         scored_candidates.sort(key=lambda x: x['score'], reverse=True)
@@ -99,11 +111,23 @@ class AIService:
         base_scores = compute_match_scores(r_text, [c_text])
         base_score = base_scores[0] * 100 if base_scores else 0
         
-        # Readiness Score Tier Bonus
-        readiness_score = candidate.get('readiness_score', 80)
+        # Compute availability status score
+        status = candidate.get('status', 'Bench')
+        status_score = 100 if status == 'Bench' else (50 if status == 'Training' else 0)
         
-        # Combine ML base score with readiness score (60% ML, 40% Readiness)
-        final_score = min(100, round((base_score * 0.6) + (readiness_score * 0.4)))
+        # Compute experience level score
+        req_exp = str(req.get('experience', 'Mid')).lower()
+        cand_exp = candidate.get('experience_years', 3)
+        if 'junior' in req_exp:
+            exp_score = 100 if cand_exp < 2 else (80 if cand_exp <= 5 else 60)
+        elif 'senior' in req_exp:
+            exp_score = 100 if cand_exp > 5 else (70 if cand_exp >= 2 else 30)
+        else: # Mid / default
+            exp_score = 100 if 2 <= cand_exp <= 5 else (90 if cand_exp > 5 else 50)
+            
+        # Combine ML base score with readiness score (70% ML/TF-IDF, 20% Readiness, 5% Status, 5% Experience)
+        readiness_score = candidate.get('readiness_score', 80)
+        final_score = min(100, round((base_score * 0.70) + (readiness_score * 0.20) + (status_score * 0.05) + (exp_score * 0.05)))
         
         candidate_set = {s.lower() for s in candidate_skills}
         overlapping = [s for s in required_skills if s.lower() in candidate_set]
@@ -128,6 +152,8 @@ class AIService:
                 'name': c['name'],
                 'role': c.get('target_role', c.get('role', c.get('title', 'Unknown'))),
                 'readiness_score': c.get('readiness_score', 80),
+                'status': c.get('status', 'Bench'),
+                'experience_years': c.get('experience_years', 3),
                 'skills': [s['name'] for s in c.get('skills', [])]
             }
             p['ml_text'] = generate_candidate_text(c)
@@ -151,13 +177,31 @@ class AIService:
                     continue
 
                 base_ml_score = ml_scores[i] * 100
-                overall_score = min(100, round((base_ml_score * 0.7) + (c['readiness_score'] * 0.3)))
+                
+                # Determine experience expectation based on role term
+                req_exp_term = 'mid'
+                if 'sr.' in target_role.lower() or 'senior' in target_role.lower() or 'lead' in target_role.lower() or 'principal' in target_role.lower():
+                    req_exp_term = 'senior'
+                elif 'jr.' in target_role.lower() or 'junior' in target_role.lower() or 'intern' in target_role.lower():
+                    req_exp_term = 'junior'
+                    
+                cand_exp = c['experience_years']
+                if req_exp_term == 'junior':
+                    exp_score = 100 if cand_exp < 2 else (80 if cand_exp <= 5 else 60)
+                elif req_exp_term == 'senior':
+                    exp_score = 100 if cand_exp > 5 else (70 if cand_exp >= 2 else 30)
+                else:
+                    exp_score = 100 if 2 <= cand_exp <= 5 else (90 if cand_exp > 5 else 50)
+                    
+                status_score = 100 if c['status'] == 'Bench' else (50 if c['status'] == 'Training' else 0)
+                
+                overall_score = min(100, round((base_ml_score * 0.70) + (c['readiness_score'] * 0.20) + (status_score * 0.05) + (exp_score * 0.05)))
 
                 if overall_score > best_score:
                     best_score = overall_score
                     best_candidate = c
             
-            if best_candidate and best_score >= 20:
+            if best_candidate:
                 allocated_ids.add(best_candidate['id'])
                 recommended_squad.append({
                     'role_slot': target_role,

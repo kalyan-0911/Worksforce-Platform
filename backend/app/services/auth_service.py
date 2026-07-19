@@ -2,7 +2,7 @@ import datetime
 import jwt
 from app.config import Config
 from app.repositories import UserRepository, CandidateRepository
-from app.database import hash_password, get_db
+from app.database import hash_password, check_password, get_db
 
 class AuthService:
     @staticmethod
@@ -18,7 +18,7 @@ class AuthService:
             "email": email,
             "password_hash": hashed,
             "role": role,
-            "professional_id": None
+            "profile_id": None
         }
         
         db = get_db()
@@ -26,13 +26,13 @@ class AuthService:
         user_id = str(result.inserted_id)
 
         import uuid
-        prof_id = None
+        profile_id = None
         if role == 'Professional':
-            prof_id = f"PROF-{uuid.uuid4().hex[:8].upper()}"
+            profile_id = f"PROF-{uuid.uuid4().hex[:8].upper()}"
             
             career_path = extra_data.get('career_path', 'Full Stack')
             cand_doc = {
-                "id": prof_id,
+                "id": profile_id,
                 "user_id": user_id,
                 "name": extra_data.get('name', 'Anonymous'),
                 "target_role": extra_data.get('target_role', 'Software Engineer'),
@@ -51,7 +51,7 @@ class AuthService:
                 "assessments": []
             }
             CandidateRepository.create(cand_doc)
-            db.users.update_one({"_id": result.inserted_id}, {"$set": {"professional_id": prof_id}})
+            db.users.update_one({"_id": result.inserted_id}, {"$set": {"profile_id": profile_id}})
         elif role == 'Employer':
             company_name = extra_data.get('company_name', 'Default Corp')
             industry = extra_data.get('industry', 'Tech')
@@ -62,9 +62,13 @@ class AuthService:
             existing_org = db.organizations.find_one({"company_name": company_name})
             
             if existing_org and not existing_org.get("user_id"):
+                profile_id = existing_org.get("id")
+                if not profile_id:
+                    profile_id = f"ORG-{uuid.uuid4().hex[:8].upper()}"
                 db.organizations.update_one(
                     {"_id": existing_org["_id"]},
                     {"$set": {
+                        "id": profile_id,
                         "user_id": user_id,
                         "email": email,
                         "industry": industry,
@@ -74,7 +78,9 @@ class AuthService:
                     }}
                 )
             else:
+                profile_id = f"ORG-{uuid.uuid4().hex[:8].upper()}"
                 db.organizations.insert_one({
+                    "id": profile_id,
                     "user_id": user_id,
                     "email": email,
                     "company_name": company_name,
@@ -83,10 +89,11 @@ class AuthService:
                     "location": location,
                     "website": website
                 })
+            db.users.update_one({"_id": result.inserted_id}, {"$set": {"profile_id": profile_id}})
 
         return {
             'role': role,
-            'professionalId': prof_id
+            'profileId': profile_id
         }
 
     @staticmethod
@@ -95,25 +102,34 @@ class AuthService:
         if not user:
             raise PermissionError("Invalid email or password.")
 
-        hashed = hash_password(password)
-        if user['password_hash'] != hashed:
+        if not check_password(password, user['password_hash']):
             raise PermissionError("Invalid email or password.")
 
         payload = {
             'id': str(user['_id']),
             'email': user['email'],
             'role': user['role'],
-            'professionalId': user.get('professional_id'),
+            'profileId': user.get('profile_id'),
+            'professionalId': user.get('profile_id') if user.get('role') == 'Professional' else None,
+            'type': 'access',
             'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=Config.ACCESS_TOKEN_EXPIRE_MINUTES)
         }
         token = jwt.encode(payload, Config.JWT_SECRET, algorithm=Config.JWT_ALGORITHM)
         
+        refresh_payload = {
+            'id': str(user['_id']),
+            'type': 'refresh',
+            'exp': datetime.datetime.utcnow() + datetime.timedelta(days=7) # 7 days
+        }
+        refresh_token = jwt.encode(refresh_payload, Config.JWT_SECRET, algorithm=Config.JWT_ALGORITHM)
+        
         return {
             'token': token,
+            'refresh_token': refresh_token,
             'user': {
                 'id': str(user['_id']),
                 'email': user['email'],
                 'role': user['role'],
-                'professionalId': user.get('professional_id')
+                'profileId': user.get('profile_id')
             }
         }

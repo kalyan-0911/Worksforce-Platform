@@ -1,6 +1,7 @@
 from app.repositories import ProjectRepository, CandidateRepository
 from app.database import get_db
 import uuid
+import datetime
 
 class ProjectService:
     @staticmethod
@@ -29,13 +30,14 @@ class ProjectService:
             db.opportunities.insert_one({
                 "id": opp_id,
                 "employer_id": organization_id,
-                "employer_name": db.organizations.find_one({"user_id": organization_id}, {"company_name": 1}).get("company_name", "Unknown"),
+                "employer_name": db.organizations.find_one({"id": organization_id}, {"company_name": 1}).get("company_name", "Unknown"),
                 "candidate_id": c["id"],
                 "project_name": name,
                 "project_description": description,
                 "project_id": proj_id,
                 "role": c.get('target_role', c.get('role', c.get('title', 'Role'))),
-                "status": "Pending"
+                "status": "Pending",
+                "created_at": datetime.datetime.utcnow()
             })
 
         new_project = {
@@ -45,7 +47,8 @@ class ProjectService:
             "size": len(member_ids),
             "status": "Planning",
             "organization_id": organization_id,
-            "members": member_profiles
+            "members": member_profiles,
+            "created_at": datetime.datetime.utcnow()
         }
         ProjectRepository.create(new_project)
         return new_project

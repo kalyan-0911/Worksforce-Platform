@@ -365,7 +365,7 @@ export default function EmployerDashboard({ activeTab, setActiveTab }) {
                     <button onClick={async () => {
                       if(window.confirm('Delete this requirement?')) {
                         try {
-                          await fetch(`http://localhost:5000/api/requisitions/${selectedReq.id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${localStorage.getItem('workforcex_token')}` }});
+                          await api.deleteRequisition(selectedReq.id);
                           setSelectedReq(null);
                           load();
                         } catch(e) { toast.error(e.message || 'An error occurred'); }
@@ -510,7 +510,7 @@ export default function EmployerDashboard({ activeTab, setActiveTab }) {
     const handleDeleteProject = async (id) => {
       if(window.confirm('Are you sure you want to delete this project team?')) {
         try {
-          await fetch(`http://localhost:5000/api/projects/${id}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${localStorage.getItem('workforcex_token')}` }});
+          await api.deleteProject(id);
           load();
         } catch(e) { toast.error(e.message || 'An error occurred'); }
       }

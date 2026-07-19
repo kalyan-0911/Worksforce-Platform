@@ -10,18 +10,18 @@ def get_analytics(current_user):
     try:
         db = get_db()
         
-        # Marketplace stats
-        total_talent = db.candidates.count_documents({"user_id": None})
-        bench_count = db.candidates.count_documents({"user_id": None, "status": "Bench"})
-        jobs_count = db.job_postings.count_documents({"organization_id": None})
-        org_count = db.organizations.count_documents({"user_id": None})
+        # Marketplace stats (Drop user_id: None filters to calculate live dataset counts)
+        total_talent = db.candidates.count_documents({})
+        bench_count = db.candidates.count_documents({"status": "Bench"})
+        jobs_count = db.job_postings.count_documents({})
+        org_count = db.organizations.count_documents({})
         
         util_rate = round(((total_talent - bench_count) / total_talent) * 100, 1) if total_talent else 0.0
 
-        # Workspace stats
-        user_id = current_user['id']
-        my_active_proj = db.projects.count_documents({"organization_id": user_id, "status": "Active"})
-        my_open_reqs = db.requisitions.count_documents({"organization_id": user_id, "status": {"$ne": "Completed"}})
+        # Workspace stats (Filter using the employer's organization profileId)
+        org_id = current_user.get('profileId')
+        my_active_proj = db.projects.count_documents({"organization_id": org_id, "status": "Active"})
+        my_open_reqs = db.requisitions.count_documents({"organization_id": org_id, "status": {"$ne": "Completed"}})
         
         return jsonify({
             "marketplace": {

@@ -48,7 +48,7 @@ export default function LoginGateway({ onLoginSuccess }) {
     setLoading(true);
     try {
       const data = await api.login({ email, password });
-      onLoginSuccess(data.token, data.user);
+      onLoginSuccess(data.token, data.refresh_token, data.user);
     } catch (err) {
       setError(err.message || 'Authentication failed. Please check your credentials.');
     } finally {
@@ -83,7 +83,7 @@ export default function LoginGateway({ onLoginSuccess }) {
       }
       
       const loginData = await api.login({ email, password });
-      onLoginSuccess(loginData.token, loginData.user);
+      onLoginSuccess(loginData.token, loginData.refresh_token, loginData.user);
       
     } catch (err) {
       setError(err.message || 'Registration failed. Please try again.');

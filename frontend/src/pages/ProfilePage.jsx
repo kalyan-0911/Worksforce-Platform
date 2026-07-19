@@ -84,15 +84,7 @@ export default function ProfilePage({ user, onProfileUpdate }) {
           description,
           hiring_status: hiringStatus
         };
-        const res = await fetch('http://localhost:5000/api/organizations/me', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('workforcex_token')}`
-          },
-          body: JSON.stringify(updatedOrg)
-        });
-        if (!res.ok) throw new Error('Failed to update organization details.');
+        await api.updateMyOrganization(updatedOrg);
         setMessage('Company profile updated successfully! ✓');
         if (onProfileUpdate) onProfileUpdate();
       } else {
@@ -108,15 +100,7 @@ export default function ProfilePage({ user, onProfileUpdate }) {
         const candId = resMe?.candidate?.id;
         if (!candId) throw new Error('Candidate ID not found.');
 
-        const response = await fetch(`http://localhost:5000/api/professionals/${candId}`, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('workforcex_token')}`
-          },
-          body: JSON.stringify(updatedCandidate)
-        });
-        if (!response.ok) throw new Error('Failed to update candidate details.');
+        await api.updateProfessional(candId, updatedCandidate);
 
         if (resumeFile) {
           const formData = new FormData();
@@ -168,15 +152,7 @@ export default function ProfilePage({ user, onProfileUpdate }) {
     formData.append('file', file);
     formData.append('type', uploadType);
     try {
-      const response = await fetch('http://localhost:5000/api/organizations/upload', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('workforcex_token')}`
-        },
-        body: formData
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || 'Failed to upload dataset.');
+      const data = await api.uploadEmployerRoster(formData);
       setUploadSuccess(`Successfully uploaded internal dataset "${data.summary.dataset_filename}"! Found ${data.summary.employee_count} employees.`);
       loadData();
     } catch (err) {

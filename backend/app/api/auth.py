@@ -20,7 +20,7 @@ def register():
 
     try:
         res = AuthService.register_user(email, password, role, extra_data=data)
-        return jsonify({'message': 'Registration successful.', 'role': res['role'], 'professionalId': res['professionalId']}), 201
+        return jsonify({'message': 'Registration successful.', 'role': res['role'], 'profileId': res['profileId']}), 201
     except ValueError as e:
         return jsonify({'error': str(e)}), 409
     except Exception as e:
@@ -47,7 +47,7 @@ def login():
 @token_required
 def get_current_user(current_user):
     try:
-        prof_id = current_user.get('professionalId')
+        prof_id = current_user.get('profileId')
         candidate = None
         if prof_id:
             candidate = CandidateRepository.get_by_id(prof_id)
@@ -56,8 +56,46 @@ def get_current_user(current_user):
             'id': current_user.get('id'),
             'email': current_user.get('email'),
             'role': current_user.get('role'),
-            'professionalId': prof_id,
+            'profileId': prof_id,
             'candidate': candidate
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@auth_bp.route('/refresh', methods=['POST'])
+def refresh():
+    data = request.json or {}
+    refresh_token = data.get('refresh_token')
+    if not refresh_token:
+        return jsonify({'error': 'Refresh token is missing.'}), 400
+    
+    try:
+        import jwt
+        import datetime
+        from app.config import Config
+        from bson.objectid import ObjectId
+        from app.database import get_db
+
+        payload = jwt.decode(refresh_token, Config.JWT_SECRET, algorithms=[Config.JWT_ALGORITHM])
+        if payload.get('type') != 'refresh':
+            return jsonify({'error': 'Invalid token type.'}), 401
+            
+        db = get_db()
+        user = db.users.find_one({"_id": ObjectId(payload['id'])})
+        if not user:
+            return jsonify({'error': 'User not found.'}), 404
+            
+        access_payload = {
+            'id': str(user['_id']),
+            'email': user['email'],
+            'role': user['role'],
+            'profileId': user.get('profile_id'),
+            'professionalId': user.get('profile_id') if user.get('role') == 'Professional' else None,
+            'type': 'access',
+            'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=Config.ACCESS_TOKEN_EXPIRE_MINUTES)
+        }
+        access_token = jwt.encode(access_payload, Config.JWT_SECRET, algorithm=Config.JWT_ALGORITHM)
+        
+        return jsonify({'access_token': access_token})
+    except Exception as e:
+        return jsonify({'error': 'Token is invalid or expired.'}), 401

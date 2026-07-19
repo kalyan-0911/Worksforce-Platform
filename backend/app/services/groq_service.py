@@ -32,7 +32,7 @@ def _get_client():
     return _groq_client
 
 
-def _chat(messages: list, model: str = "llama3-8b-8192", temperature: float = 0.3) -> str:
+def _chat(messages: list, model: str = "mixtral-8x7b-32768", temperature: float = 0.3) -> str:
     """Send a chat completion request to Groq and return the response text."""
     import time
     import re
@@ -121,7 +121,7 @@ def parse_resume(resume_text: str) -> dict:
                 {"role": "system", "content": GROQ_RESUME_SYSTEM},
                 {"role": "user", "content": f"Parse this resume:\n\n{resume_text[:4000]}"},
             ],
-            model="llama3-8b-8192",
+            model="mixtral-8x7b-32768",
             temperature=0.1,
         )
         parsed = _extract_json(response)
@@ -209,7 +209,7 @@ def explain_match(candidate: dict, job: dict, match_score: int) -> str:
                 {"role": "system", "content": "You are an expert AI recruiting assistant on a talent marketplace, advising employers on candidate fit."},
                 {"role": "user", "content": prompt},
             ],
-            model="llama3-8b-8192",
+            model="mixtral-8x7b-32768",
             temperature=0.4,
         )
     except Exception as e:
@@ -339,7 +339,7 @@ def analyze_skill_demand(top_skills: list[dict]) -> str:
                 {"role": "system", "content": "You are a data-driven talent market analyst focused on the Indian tech industry."},
                 {"role": "user", "content": prompt},
             ],
-            model="llama3-8b-8192",
+            model="mixtral-8x7b-32768",
             temperature=0.3,
         )
     except Exception as e:

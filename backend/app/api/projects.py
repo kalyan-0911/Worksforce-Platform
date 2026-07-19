@@ -18,11 +18,11 @@ def manage_projects(current_user):
             description = data.get('description', '')
             member_ids = data.get('memberIds', [])
             
-            res = ProjectService.deploy_squad(name, description, member_ids, current_user['id'])
+            res = ProjectService.deploy_squad(name, description, member_ids, current_user.get('profileId'))
             return jsonify({'message': 'Team successfully deployed.', 'projectId': res['id']}), 201
         else: # GET
             from app.database import get_db
-            projects = list(get_db().projects.find({'organization_id': current_user['id']}, {'_id': 0}))
+            projects = list(get_db().projects.find({'organization_id': current_user.get('profileId')}, {'_id': 0}))
             
             # Hotfix: Demote older projects stuck in 'Active' state without joined members
             for p in projects:
@@ -52,6 +52,7 @@ def recommend_squad(current_user):
         return jsonify(recommendations)
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
 @projects_bp.route('/projects/<id>', methods=['DELETE'])
 @token_required
 @role_required('Employer')
@@ -61,7 +62,7 @@ def delete_project(current_user, id):
         db = get_db()
         
         # Find project first to get name for cascading deletes
-        project = db.projects.find_one({'id': id, 'organization_id': current_user['id']})
+        project = db.projects.find_one({'id': id, 'organization_id': current_user.get('profileId')})
         if not project:
             return jsonify({'error': 'Project not found or unauthorized.'}), 404
             
@@ -72,14 +73,14 @@ def delete_project(current_user, id):
         
         if project_name:
             # Delete corresponding requisitions (Drafts or otherwise)
-            db.requisitions.delete_many({'project_name': project_name, 'organization_id': current_user['id']})
+            db.requisitions.delete_many({'project_name': project_name, 'organization_id': current_user.get('profileId')})
             
             # Find candidates tied to these opportunities
-            opps = list(db.opportunities.find({'project_name': project_name, 'employer_id': current_user['id']}))
+            opps = list(db.opportunities.find({'project_name': project_name, 'employer_id': current_user.get('profileId')}))
             candidate_ids = list(set([opp.get('candidate_id') for opp in opps if opp.get('candidate_id')]))
             
             # Delete the opportunities
-            db.opportunities.delete_many({'project_name': project_name, 'employer_id': current_user['id']})
+            db.opportunities.delete_many({'project_name': project_name, 'employer_id': current_user.get('profileId')})
             
             # Revert candidate status if they have no other accepted opportunities
             for cid in candidate_ids:

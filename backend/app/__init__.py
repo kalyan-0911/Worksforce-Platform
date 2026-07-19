@@ -8,7 +8,6 @@ from app.api import (
     projects_bp,
     requisitions_bp,
     analytics_bp,
-    assessments_bp,
 )
 from app.api.jobs import jobs_bp
 from app.api.admin import admin_bp
@@ -26,7 +25,7 @@ def create_app():
     app.register_blueprint(projects_bp,     url_prefix='/api')
     app.register_blueprint(requisitions_bp, url_prefix='/api')
     app.register_blueprint(analytics_bp,    url_prefix='/api')
-    app.register_blueprint(assessments_bp,  url_prefix='/api')
+
     app.register_blueprint(jobs_bp,         url_prefix='/api')
     app.register_blueprint(admin_bp,        url_prefix='/api')
     app.register_blueprint(organizations_bp,url_prefix='/api')

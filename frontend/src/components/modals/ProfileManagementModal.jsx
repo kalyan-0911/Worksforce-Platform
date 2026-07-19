@@ -84,15 +84,7 @@ export default function ProfileManagementModal({ onClose, user }) {
           hiring_status: hiringStatus
         };
         // Update user's organization in DB
-        const response = await fetch('http://localhost:5000/api/organizations/me', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('workforcex_token')}`
-          },
-          body: JSON.stringify(updatedOrg)
-        });
-        if (!response.ok) throw new Error('Failed to update organization details.');
+        await api.updateMyOrganization(updatedOrg);
         setMessage('Company profile updated successfully! ✓');
       } else {
         // Professional update
@@ -109,15 +101,7 @@ export default function ProfileManagementModal({ onClose, user }) {
         const candId = resMe?.candidate?.id;
         if (!candId) throw new Error('Candidate ID not found.');
 
-        const response = await fetch(`http://localhost:5000/api/professionals/${candId}`, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${localStorage.getItem('workforcex_token')}`
-          },
-          body: JSON.stringify(updatedCandidate)
-        });
-        if (!response.ok) throw new Error('Failed to update candidate details.');
+        await api.updateProfessional(candId, updatedCandidate);
 
         // If resume uploaded, handle that
         if (resumeFile) {
